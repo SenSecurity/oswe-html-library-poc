@@ -1,14 +1,10 @@
 # Publish Checklist
 
-## Current Blocker
+## Published POC
 
-The local `gh` CLI is not authenticated, and the GitHub connector currently lists no accessible repositories.
-
-To let Codex push this automatically, one of these must be true:
-
-- `gh auth login` has been completed locally, or
-- the GitHub app connector has access to the target repository, or
-- you provide an existing `owner/repo` where the connector can create files.
+- Repository: `https://github.com/SenSecurity/oswe-html-library-poc`
+- GitHub Pages URL: `https://sensecurity.github.io/oswe-html-library-poc/`
+- Notion POC page: `https://www.notion.so/35bd56f648e28187be88e4833d9bc40c`
 
 ## Target Repo Shape
 
@@ -18,11 +14,13 @@ Recommended repo name:
 oswe-html-library
 ```
 
-Recommended visibility for this POC:
+Visibility used for this POC:
 
 ```text
-private repo, public/sanitized Pages output
+public repo, public/sanitized Pages output
 ```
+
+GitHub rejected Pages for the private POC repository under the current account plan, so the POC repo was made public. Keep this repo sanitized.
 
 ## Notion Embed
 
@@ -34,3 +32,5 @@ After deployment, use Notion manually:
 ```
 
 The POC proved that plain links are not enough for the desired render. The Notion block should be a real embed block.
+
+Browser automation could not create the `/embed` block because the automated browser was not logged into Notion. The Notion MCP connector can update page text, but did not expose a reliable create-embed-block operation in this session.

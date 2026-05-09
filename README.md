@@ -10,16 +10,22 @@ Static HTML proof of concept for embedding an OSWE script-library interface in N
 
 ## Publish Flow
 
-1. Create a GitHub repository.
-2. Push this folder to the repo as the root.
-3. In GitHub, enable Pages with **GitHub Actions** as the source.
-4. Run the `Deploy GitHub Pages` workflow.
-5. Copy the resulting Pages URL.
-6. In Notion, create an `/embed` block with that URL.
+Published POC:
+
+- Repository: `https://github.com/SenSecurity/oswe-html-library-poc`
+- GitHub Pages: `https://sensecurity.github.io/oswe-html-library-poc/`
+
+To reproduce:
+
+1. Push this folder to a GitHub repository.
+2. In GitHub, enable Pages with **GitHub Actions** as the source.
+3. Run the `Deploy GitHub Pages` workflow.
+4. Copy the resulting Pages URL.
+5. In Notion, create an `/embed` block with that URL.
 
 ## Privacy Note
 
-If the Pages URL is reachable by Notion, it is reachable by anyone with the URL unless access control is added in front of it.
+This POC repository is public because the current GitHub plan rejected Pages for a private repository. If the Pages URL is reachable by Notion, it is reachable by anyone with the URL unless access control is added in front of it.
 
 For real OSWE/HTB-derived skeletons, decide first whether the deployed HTML may contain full code or only navigation. A safer production split is:
 
