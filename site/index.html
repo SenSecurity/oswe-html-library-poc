@@ -46,24 +46,7 @@
     main {
       max-width: 1420px;
       margin: 0 auto;
-      padding: 28px 24px 44px;
-    }
-
-    .hero {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 320px;
-      gap: 24px;
-      align-items: end;
-      padding-bottom: 24px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .eyebrow {
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      font-size: 12px;
-      margin-bottom: 10px;
+      padding: 18px;
     }
 
     h1 {
@@ -91,24 +74,11 @@
       line-height: 1.45;
     }
 
-    .status {
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface);
-      padding: 14px;
-      font-size: 14px;
-    }
-
-    .status strong {
-      display: block;
-      margin-bottom: 6px;
-    }
-
     .workspace {
       display: grid;
       grid-template-columns: 360px minmax(0, 1fr);
       gap: 18px;
-      margin-top: 22px;
+      margin-top: 0;
       align-items: start;
     }
 
@@ -194,31 +164,6 @@
       min-width: 0;
     }
 
-    .topline {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-    }
-
-    .metric {
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface);
-      padding: 14px;
-    }
-
-    .metric strong {
-      display: block;
-      font-size: 22px;
-      line-height: 1;
-      margin-bottom: 8px;
-    }
-
-    .metric span {
-      color: var(--muted);
-      font-size: 13px;
-    }
-
     .panel {
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -297,37 +242,8 @@
       background: var(--code);
       color: var(--code-ink);
       font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      min-height: 520px;
+      min-height: calc(100vh - 150px);
       max-height: 720px;
-    }
-
-    .recipe {
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface);
-      padding: 14px;
-    }
-
-    .recipe-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 10px;
-    }
-
-    .recipe-card {
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface-2);
-      padding: 12px;
-    }
-
-    .recipe-card ol {
-      margin: 8px 0 0;
-      padding-left: 18px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.45;
     }
 
     .empty {
@@ -341,17 +257,12 @@
     }
 
     @media (max-width: 1040px) {
-      .hero,
       .workspace { grid-template-columns: 1fr; }
       .sidebar { position: static; max-height: none; }
-      .topline,
-      .recipe-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 660px) {
       main { padding: 20px 14px 32px; }
-      .topline,
-      .recipe-grid { grid-template-columns: 1fr; }
       .panel-head { grid-template-columns: 1fr; }
       .actions { justify-content: start; }
       pre { max-height: none; }
@@ -360,17 +271,6 @@
 </head>
 <body>
   <main>
-    <section class="hero">
-      <div>
-        <div class="eyebrow">OSWE HTML library</div>
-        <h1>Exploit-builder scripts</h1>
-        <p>Everything important is inside this HTML: navigation, playbooks, skeletons, snippets, examples, and copy buttons. Notion is just the embed container.</p>
-      </div>
-      <aside class="status">
-        <strong>Content boundary</strong>
-        <p>Sanitized public rebuild from local HTB Senior Web Penetration Tester material and your Skeleton Scripts retrieval patterns. Edit placeholders before use against an authorized lab target.</p>
-      </aside>
-    </section>
 
     <section class="workspace">
       <aside class="sidebar" aria-label="Script library controls">
@@ -387,12 +287,6 @@
       </aside>
 
       <div class="content">
-        <section class="topline" aria-label="Library stats">
-          <div class="metric"><strong id="count-all">0</strong><span>Total scripts in HTML</span></div>
-          <div class="metric"><strong id="count-replace">0</strong><span>Replaceable functions</span></div>
-          <div class="metric"><strong id="count-add">0</strong><span>Helpers</span></div>
-          <div class="metric"><strong id="count-example">0</strong><span>Complete examples</span></div>
-        </section>
 
         <article class="panel" id="script-panel">
           <div class="panel-head">
@@ -970,13 +864,6 @@
       renderList();
     }
 
-    function renderStats() {
-      document.querySelector("#count-all").textContent = scripts.length;
-      document.querySelector("#count-replace").textContent = scripts.filter((s) => s.type === "REPLACE").length;
-      document.querySelector("#count-add").textContent = scripts.filter((s) => s.type === "ADD").length;
-      document.querySelector("#count-example").textContent = scripts.filter((s) => s.type === "HTB EXAMPLE").length;
-    }
-
     filters.forEach((button) => {
       button.addEventListener("click", () => {
         activeFilter = button.dataset.filter;
@@ -1007,7 +894,6 @@
       URL.revokeObjectURL(url);
     });
 
-    renderStats();
     activate(activeScript.id);
   </script>
 </body>
