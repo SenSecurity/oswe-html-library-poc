@@ -6,6 +6,7 @@
 - GitHub Pages URL: `https://sensecurity.github.io/oswe-html-library-poc/`
 - Notion POC page: `https://www.notion.so/35bd56f648e28187be88e4833d9bc40c`
 - Notion `/embed` render: confirmed working.
+- Current product decision: all library content lives in the HTML, with Notion used as the embed container.
 
 ## Target Repo Shape
 

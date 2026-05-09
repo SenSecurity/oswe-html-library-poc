@@ -1,10 +1,10 @@
 # OSWE HTML Library POC
 
-Static HTML proof of concept for embedding an OSWE script-library interface in Notion.
+Static HTML proof of concept for embedding the full OSWE script-library interface in Notion.
 
 ## What This Contains
 
-- `site/index.html`: sanitized HTML preview with generic skeleton snippets.
+- `site/index.html`: full static HTML library with navigation, search, filters, copy kits, scripts, copy buttons, and downloads.
 - `.github/workflows/deploy-pages.yml`: GitHub Actions workflow for GitHub Pages.
 - No course-specific scripts, targets, credentials, tokens, or proprietary content.
 
@@ -30,10 +30,9 @@ The POC was confirmed working in Notion with a real `/embed` block.
 
 This POC repository is public because the current GitHub plan rejected Pages for a private repository. If the Pages URL is reachable by Notion, it is reachable by anyone with the URL unless access control is added in front of it.
 
-For real OSWE/HTB-derived skeletons, decide first whether the deployed HTML may contain full code or only navigation. A safer production split is:
+Current direction: everything needed for retrieval and copying lives in the HTML. Notion is the embed container.
 
-- Notion private pages: real code blocks.
-- GitHub Pages HTML: navigation, matrix, playbooks, and sanitized/generic snippets.
+For real OSWE/HTB-derived skeletons, keep the deployed HTML private or access-controlled if the code should not be public. This POC stays sanitized because GitHub Pages is public under the current account plan.
 
 ## Local Preview
 
