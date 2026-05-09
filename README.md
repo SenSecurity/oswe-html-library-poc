@@ -14,6 +14,7 @@ Published POC:
 
 - Repository: `https://github.com/SenSecurity/oswe-html-library-poc`
 - GitHub Pages: `https://sensecurity.github.io/oswe-html-library-poc/`
+- Notion POC: `https://www.notion.so/35bd56f648e28187be88e4833d9bc40c`
 
 To reproduce:
 
@@ -22,6 +23,8 @@ To reproduce:
 3. Run the `Deploy GitHub Pages` workflow.
 4. Copy the resulting Pages URL.
 5. In Notion, create an `/embed` block with that URL.
+
+The POC was confirmed working in Notion with a real `/embed` block.
 
 ## Privacy Note
 
