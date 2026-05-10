@@ -131,6 +131,19 @@
       gap: 7px;
     }
 
+    .category-heading {
+      margin: 11px 0 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .category-heading:first-child {
+      margin-top: 0;
+    }
+
     .script-button {
       width: 100%;
       border: 1px solid var(--line);
@@ -156,6 +169,12 @@
     .button-meta {
       color: var(--muted);
       font-size: 12px;
+    }
+
+    .source-meta {
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 800;
     }
 
     .content {
@@ -210,6 +229,7 @@
     .area-listener { background: var(--violet); }
     .area-helper { background: var(--accent); }
     .area-example { background: var(--green); }
+    .source-pill { background: #334155; }
 
     .actions {
       display: flex;
@@ -275,12 +295,20 @@
     <section class="workspace">
       <aside class="sidebar" aria-label="Script library controls">
         <input class="search" type="search" placeholder="Search scripts, areas, techniques..." aria-label="Search scripts">
-        <div class="filters" aria-label="Script type filters">
+        <div class="filters" aria-label="Script category filters">
           <button class="filter" data-filter="all" aria-pressed="true">All</button>
-          <button class="filter" data-filter="START HERE" aria-pressed="false">Start</button>
-          <button class="filter" data-filter="REPLACE" aria-pressed="false">Replace</button>
-          <button class="filter" data-filter="ADD" aria-pressed="false">Add</button>
-          <button class="filter" data-filter="HTB EXAMPLE" aria-pressed="false">Examples</button>
+          <button class="filter" data-filter="Start" aria-pressed="false">Start</button>
+          <button class="filter" data-filter="Authentication" aria-pressed="false">Auth</button>
+          <button class="filter" data-filter="SQL Injection" aria-pressed="false">SQLi</button>
+          <button class="filter" data-filter="NoSQL / LDAP / XPath" aria-pressed="false">NoSQL</button>
+          <button class="filter" data-filter="XSS / CSRF / CORS" aria-pressed="false">XSS</button>
+          <button class="filter" data-filter="SSRF / OOB / Listener" aria-pressed="false">SSRF/OOB</button>
+          <button class="filter" data-filter="Upload / Webshell" aria-pressed="false">Upload</button>
+          <button class="filter" data-filter="Deserialization" aria-pressed="false">Deser</button>
+          <button class="filter" data-filter="Second-Order / WebSocket" aria-pressed="false">2nd/WS</button>
+          <button class="filter" data-filter="Logic / Race / Timing" aria-pressed="false">Logic</button>
+          <button class="filter" data-filter="Helpers" aria-pressed="false">Helpers</button>
+          <button class="filter" data-filter="Examples" aria-pressed="false">Examples</button>
         </div>
         <div class="script-list" aria-label="Scripts"></div>
         <div class="empty">No scripts match this filter.</div>
@@ -297,6 +325,7 @@
                 <span id="script-type" class="pill"></span>
                 <span id="script-area" class="pill"></span>
                 <span id="script-slot" class="pill area-helper"></span>
+                <span id="script-source" class="pill source-pill"></span>
               </div>
             </div>
             <div class="actions">
@@ -1050,8 +1079,72 @@
       "Example": "area-example"
     };
 
+    const sourceTags = {
+      "exploit-nosql-form-match-dump": "Skeleton Script 1",
+      "exploit-ldap-prefix-dump": "Skeleton Script 1",
+      "exploit-ssrf-two-step-iframe": "Skeleton Script 2",
+      "exploit-nosql-regex-dump": "Skeleton Script 3",
+      "example-nosql-regex-full-chain": "Skeleton Script 3",
+      "listener-https-b64": "Skeleton Script 4",
+      "exploit-boolean-sqli-dump": "Skeleton Scripts 5-10",
+      "exploit-boolean-sqli-bisect": "Skeleton Scripts 5-10",
+      "exploit-boolean-sqli-row-count": "Skeleton Scripts 5-10",
+      "exploit-cookie-sqli-oracle": "Skeleton Scripts 5-10",
+      "exploit-time-sqli-bitwise": "Skeleton Scripts 5-10",
+      "exploit-mssql-openrowset-file-read": "Skeleton Scripts 5-10",
+      "exploit-token-auth-sleep-file-dump": "Skeleton Scripts 11-12",
+      "exploit-command-injection-sleep-dump": "Skeleton Scripts 11-12"
+    };
+
+    const categoryOrder = [
+      "Start",
+      "Authentication",
+      "SQL Injection",
+      "NoSQL / LDAP / XPath",
+      "XSS / CSRF / CORS",
+      "SSRF / OOB / Listener",
+      "Upload / Webshell",
+      "Command Injection / SSTI",
+      "Deserialization",
+      "Prototype / Node",
+      "Second-Order / WebSocket",
+      "File Read / Traversal",
+      "Logic / Race / Timing",
+      "Helpers",
+      "Examples"
+    ];
+
+    function categoryFor(script) {
+      const text = `${script.id} ${script.title} ${script.area} ${script.summary}`.toLowerCase();
+      if (script.type === "START HERE") return "Start";
+      if (script.type === "HTB EXAMPLE") return "Examples";
+      if (script.type === "ADD") return "Helpers";
+      if (text.includes("login") || text.includes("jwt") || text.includes("auth") || text.includes("cookie forge")) return "Authentication";
+      if (text.includes("sqli") || text.includes("sql ") || text.includes("postgresql") || text.includes("mssql") || text.includes("openrowset") || text.includes("outfile")) return "SQL Injection";
+      if (text.includes("nosql") || text.includes("ldap") || text.includes("xpath")) return "NoSQL / LDAP / XPath";
+      if (text.includes("xss") || text.includes("csrf") || text.includes("cors") || text.includes("exfil")) return "XSS / CSRF / CORS";
+      if (text.includes("ssrf") || text.includes("oob") || text.includes("listener") || text.includes("dns rebinding") || text.includes("callback") || text.includes("smuggling") || text.includes("cache poison")) return "SSRF / OOB / Listener";
+      if (text.includes("upload") || text.includes("webshell") || text.includes("phar")) return "Upload / Webshell";
+      if (text.includes("command injection") || text.includes("ssti") || text.includes("run_cmd") || text.includes("command endpoint")) return "Command Injection / SSTI";
+      if (text.includes("deser") || text.includes("serialized") || text.includes("ysoserial") || text.includes("pop chain")) return "Deserialization";
+      if (text.includes("prototype") || text.includes("node eval")) return "Prototype / Node";
+      if (text.includes("second-order") || text.includes("websocket")) return "Second-Order / WebSocket";
+      if (text.includes("path traversal") || text.includes("file read") || text.includes("proof file")) return "File Read / Traversal";
+      if (text.includes("logic") || text.includes("race") || text.includes("timing") || text.includes("password reset") || text.includes("negative amount")) return "Logic / Race / Timing";
+      return script.area || "Other";
+    }
+
+    function scriptWeight(script) {
+      if (script.id === "main-full-chain") return 0;
+      if (script.type === "START HERE") return 10;
+      if (script.type === "REPLACE") return 20;
+      if (script.type === "ADD") return 30;
+      if (script.type === "HTB EXAMPLE") return 40;
+      return 50;
+    }
+
     let activeFilter = "all";
-    let activeScript = scripts[0];
+    let activeScript = scripts.find((script) => script.id === "main-full-chain") || scripts[0];
 
     const search = document.querySelector(".search");
     const list = document.querySelector(".script-list");
@@ -1062,22 +1155,27 @@
     const type = document.querySelector("#script-type");
     const area = document.querySelector("#script-area");
     const slot = document.querySelector("#script-slot");
+    const source = document.querySelector("#script-source");
     const code = document.querySelector("#script-code");
     const copy = document.querySelector("#copy-active");
     const download = document.querySelector("#download-active");
 
     function scriptMatches(script) {
       const q = search.value.trim().toLowerCase();
+      const category = categoryFor(script);
+      const sourceTag = sourceTags[script.id] || "";
       const haystack = [
         script.title,
         script.type,
         script.area,
+        category,
         script.slot,
         script.summary,
+        sourceTag,
         script.code
       ].join(" ").toLowerCase();
 
-      const filterMatch = activeFilter === "all" || script.type === activeFilter;
+      const filterMatch = activeFilter === "all" || category === activeFilter;
       return filterMatch && (!q || haystack.includes(q));
     }
 
@@ -1086,7 +1184,19 @@
       list.innerHTML = "";
       empty.style.display = matches.length ? "none" : "block";
 
-      matches.forEach((script) => {
+      categoryOrder.forEach((category) => {
+        const group = matches
+          .filter((script) => categoryFor(script) === category)
+          .sort((a, b) => scriptWeight(a) - scriptWeight(b) || a.title.localeCompare(b.title));
+        if (!group.length) return;
+
+        const heading = document.createElement("div");
+        heading.className = "category-heading";
+        heading.textContent = `${category} (${group.length})`;
+        list.appendChild(heading);
+
+        group.forEach((script) => {
+          const sourceTag = sourceTags[script.id] || "";
         const button = document.createElement("button");
         button.className = "script-button";
         button.type = "button";
@@ -1094,10 +1204,12 @@
         button.setAttribute("aria-pressed", String(script.id === activeScript.id));
         button.innerHTML = `
           <span class="button-title">${script.title}</span>
-          <span class="button-meta">${script.type} / ${script.area}</span>
+          <span class="button-meta">${script.type} / ${script.slot}</span>
+          ${sourceTag ? `<span class="source-meta">${sourceTag}</span>` : ""}
         `;
         button.addEventListener("click", () => activate(script.id));
         list.appendChild(button);
+        });
       });
     }
 
@@ -1107,9 +1219,11 @@
       summary.textContent = activeScript.summary;
       type.textContent = activeScript.type;
       type.className = `pill ${typeClasses[activeScript.type]}`;
-      area.textContent = activeScript.area;
-      area.className = `pill ${areaClasses[activeScript.area]}`;
+      area.textContent = categoryFor(activeScript);
+      area.className = `pill ${areaClasses[activeScript.area] || "area-exploit"}`;
       slot.textContent = activeScript.slot;
+      source.textContent = sourceTags[activeScript.id] || "";
+      source.style.display = source.textContent ? "inline-flex" : "none";
       code.textContent = activeScript.code.trim();
       renderList();
     }
