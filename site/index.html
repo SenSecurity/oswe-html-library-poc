@@ -391,27 +391,41 @@ def callback_url(path="", scheme="http"):
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def conditional_get_extract():
-    # Use when: GET page/API returns data and you need extract only if conditions match.
-    # Examples: admin appears 2x, response has admin + Public Discussion, hit contains admin.
-    PATH = "/api/items"                       # EDIT
-    PARAMS = {}                               # EDIT query params
-    HEADERS = {}                              # EDIT
-    COOKIES = {}                              # EDIT
-    EXPECT_STATUS = (200,)                    # EDIT
-    FOLLOW_REDIRECTS = True                   # EDIT
+    # Use when: one GET returns a big HTML/JSON/text blob and you need:
+    # 1) confirm the blob is the right one, then 2) extract only useful values.
+    # Fill order:
+    # - PATH/PARAMS: request to fetch the blob.
+    # - CONTAINS_*/MIN_COUNTS: conditions checked against the full response body.
+    # - EXTRACT_REGEX: capture candidates from the body.
+    # - HIT_CONTAINS_*: filters applied to each captured candidate.
+    # - FIELD_REGEX: optional key=value parser for each final hit.
+    PATH = "/api/items"                       # EDIT endpoint to fetch, e.g. /group/13/messages
+    PARAMS = {}                               # EDIT query params, e.g. {"page": "1"}
+    HEADERS = {}                              # EDIT extra headers only; Bearer from login is already in s.headers
+    COOKIES = {}                              # EDIT extra cookies only; session cookies already ride with s
+    EXPECT_STATUS = (200,)                    # EDIT allowed HTTP statuses
+    FOLLOW_REDIRECTS = True                   # EDIT False if redirect status/location matters
 
-    CONTAINS_ALL = []                         # EDIT e.g. ["admin", "Public Discussion"]
-    CONTAINS_ANY = []                         # EDIT e.g. ["role", "username"]
-    CONTAINS_NONE = []                        # EDIT e.g. ["disabled"]
-    MIN_COUNTS = {"admin": 2}                 # EDIT e.g. {"admin": 2}; {} to disable
+    # Full-body gates: fail early if the whole response is not the interesting page/data.
+    CONTAINS_ALL = []                         # EDIT all must exist, e.g. ["admin", "Public Discussion"]
+    CONTAINS_ANY = []                         # EDIT at least one must exist, e.g. ["role", "username"]
+    CONTAINS_NONE = []                        # EDIT none may exist, e.g. ["disabled", "forbidden"]
+    MIN_COUNTS = {"admin": 2}                 # EDIT body.count(marker) minimums; {} disables count checks
 
-    EXTRACT_REGEX = r'"username"\s*:\s*"([^"]+)"'  # EDIT capture what you want from body
-    HIT_CONTAINS_ALL = []                     # EDIT filters each extracted hit
-    HIT_CONTAINS_ANY = []                     # EDIT
-    FIELD_REGEX = r'([A-Za-z_][A-Za-z0-9_]*)=([^;"]+)'  # EDIT parse key=value inside each hit; "" disables
-    UNIQUE = True                             # EDIT
-    DEBUG_CAPTURE = True                      # EDIT print raw captures and filter decisions
-    PRINT_BODY_ON_FAIL = False                # EDIT
+    # Candidate extraction: capture the value/block you want from the body.
+    # Examples:
+    # - r'"username"\s*:\s*"([^"]+)"' captures usernames from JSON-ish text.
+    # - r'"message_text"\s*:\s*"([^"]+)"' captures full message text.
+    # - r'token=([^;"]+)' captures only a token inside a message/cookie string.
+    EXTRACT_REGEX = r'"username"\s*:\s*"([^"]+)"'  # EDIT one capture group is easiest
+
+    # Per-hit filters: after regex capture, keep only candidates with these markers.
+    HIT_CONTAINS_ALL = []                     # EDIT all must exist inside hit, e.g. ["token=", "username=admin"]
+    HIT_CONTAINS_ANY = []                     # EDIT at least one must exist inside hit
+    FIELD_REGEX = r'([A-Za-z_][A-Za-z0-9_]*)=([^;"]+)'  # EDIT parses "token=...; username=..."; "" disables
+    UNIQUE = True                             # EDIT remove duplicate hits while keeping order
+    DEBUG_CAPTURE = True                      # EDIT prints body preview, raw captures, skips, parsed fields
+    PRINT_BODY_ON_FAIL = False                # EDIT True when gates fail and you need to see response
 
     r = s.get(
         url(PATH),
@@ -452,6 +466,8 @@ def callback_url(path="", scheme="http"):
             print(body[:1500])
         die("; ".join(failures))
 
+    # If EXTRACT_REGEX is empty, the whole body becomes one hit.
+    # If regex has multiple capture groups, they are joined into one printable hit.
     hits = []
     if EXTRACT_REGEX:
         raw_hits = re.findall(EXTRACT_REGEX, body, flags=re.I | re.S)
@@ -482,6 +498,8 @@ def callback_url(path="", scheme="http"):
     for hit in hits:
         print("[hit]", hit)
         if FIELD_REGEX:
+            # Helpful for strings like:
+            # token=JWT; username=admin; group=13; group_name=Public Discussion
             fields = dict(re.findall(FIELD_REGEX, hit))
             if fields:
                 print("[fields]", fields)
