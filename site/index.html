@@ -195,6 +195,11 @@ var PRESETS = [
     ["login-form-basic","login"],
     ["proof-basic","proof"]
   ]},
+  {id:"get-post-proof", title:"GET -> POST -> proof", steps:[
+    ["http-get-request","get_step"],
+    ["http-post-request","post_step"],
+    ["proof-basic","proof"]
+  ]},
   {id:"deser-rce-proof", title:"deserialization -> RCE -> proof", steps:[
     ["deser-java-delivery","deliver_java_serialized_payload"],
     ["cmdi-runner","run_cmd"],
@@ -321,6 +326,100 @@ def callback_url(path="", scheme="http"):
     if DEBUG:
         print(r.text[:500])
     check(r.status_code < 500, "server error on raw request")
+    return r
+`
+  },
+  {
+    id:"http-get-request",
+    title:"REPLACE exploit() - Specific GET request",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"http_get_request",
+    aliases:["get","request","specific get","params","headers","cookies","probe","endpoint","burp"],
+    useWhen:"You need one explicit GET step in the exploit chain. Duplicate it and rename the function for multiple target-specific GETs.",
+    editFirst:["PATH","PARAMS","HEADERS","COOKIES","EXPECT_STATUS","EXPECT_TEXT"],
+    dependsOn:[],
+    sourceRefs:["v4"],
+    code:String.raw`def http_get_request():
+    # Use when: add one concrete GET request to the exploit chain.
+    # main.py use: duplicate this step and rename it for get_profile(), get_token(), etc.
+    PATH = "/api/item"                  # EDIT
+    PARAMS = {"id": "1"}                # EDIT query string params; {} if none
+    HEADERS = {}                        # EDIT e.g. {"X-Api-Key": "REPLACE"}
+    COOKIES = {}                        # EDIT e.g. {"debug": "1"}; session cookies already included
+    EXPECT_STATUS = (200,)              # EDIT e.g. (200, 302)
+    EXPECT_TEXT = ""                    # EDIT optional marker in response body
+    FOLLOW_REDIRECTS = True             # EDIT
+    PRINT_BODY = True                   # EDIT
+
+    r = s.get(
+        url(PATH),
+        params=PARAMS,
+        headers=HEADERS,
+        cookies=COOKIES,
+        allow_redirects=FOLLOW_REDIRECTS,
+        timeout=TIMEOUT,
+    )
+    dprint("GET", r.url, r.status_code, "len=", len(r.text))
+    check(r.status_code in EXPECT_STATUS, f"GET bad status {r.status_code}")
+    if EXPECT_TEXT:
+        check(EXPECT_TEXT in r.text, "GET marker not found")
+    if PRINT_BODY:
+        print(r.text[:1000])
+    return r
+`
+  },
+  {
+    id:"http-post-request",
+    title:"REPLACE exploit() - Specific POST request",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"http_post_request",
+    aliases:["post","request","specific post","form","json","raw body","headers","cookies","endpoint","burp"],
+    useWhen:"You need one explicit POST step in the exploit chain. Supports form, JSON, or raw body.",
+    editFirst:["PATH","MODE","PARAMS","FORM_DATA","JSON_BODY","RAW_BODY","HEADERS","EXPECT_STATUS","EXPECT_TEXT"],
+    dependsOn:[],
+    sourceRefs:["v4"],
+    code:String.raw`def http_post_request():
+    # Use when: add one concrete POST request to the exploit chain.
+    # main.py use: duplicate this step and rename it for post_note(), create_item(), trigger_job(), etc.
+    PATH = "/api/item"                  # EDIT
+    MODE = "json"                       # EDIT: form | json | raw
+    PARAMS = {}                         # EDIT query string params
+    FORM_DATA = {"name": "test"}        # EDIT for MODE=form
+    JSON_BODY = {"name": "test"}        # EDIT for MODE=json
+    RAW_BODY = "name=test"              # EDIT for MODE=raw
+    HEADERS = {}                        # EDIT Content-Type if MODE=raw
+    COOKIES = {}                        # EDIT if needed
+    EXPECT_STATUS = (200, 201, 202, 302) # EDIT
+    EXPECT_TEXT = ""                    # EDIT optional marker in response body
+    FOLLOW_REDIRECTS = True             # EDIT
+    PRINT_BODY = True                   # EDIT
+
+    check(MODE in ("form", "json", "raw"), "bad MODE")
+    kwargs = {
+        "params": PARAMS,
+        "headers": HEADERS,
+        "cookies": COOKIES,
+        "allow_redirects": FOLLOW_REDIRECTS,
+        "timeout": TIMEOUT,
+    }
+    if MODE == "form":
+        kwargs["data"] = FORM_DATA
+    elif MODE == "json":
+        kwargs["json"] = JSON_BODY
+    else:
+        kwargs["data"] = RAW_BODY
+
+    r = s.post(url(PATH), **kwargs)
+    dprint("POST", r.url, r.status_code, "len=", len(r.text))
+    check(r.status_code in EXPECT_STATUS, f"POST bad status {r.status_code}")
+    if EXPECT_TEXT:
+        check(EXPECT_TEXT in r.text, "POST marker not found")
+    if PRINT_BODY:
+        print(r.text[:1000])
     return r
 `
   },
