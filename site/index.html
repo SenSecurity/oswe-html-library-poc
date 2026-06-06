@@ -387,7 +387,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"conditional_get_extract",
     aliases:["get","conditional get","extract","regex","admin twice","contains","marker","filter","response parser","html json text"],
     useWhen:"GET response contains many values and you only want candidates when markers/counts match, e.g. admin appears twice or admin plus another string exists.",
-    editFirst:["PATH","PARAMS","EXTRACT_REGEX","CONTAINS_ALL","MIN_COUNTS","HIT_CONTAINS_ALL"],
+    editFirst:["PATH","PARAMS","EXTRACT_REGEX","CONTAINS_ALL","MIN_COUNTS","HIT_CONTAINS_ALL","DEBUG_CAPTURE"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def conditional_get_extract():
@@ -408,7 +408,9 @@ def callback_url(path="", scheme="http"):
     EXTRACT_REGEX = r'"username"\s*:\s*"([^"]+)"'  # EDIT capture what you want from body
     HIT_CONTAINS_ALL = []                     # EDIT filters each extracted hit
     HIT_CONTAINS_ANY = []                     # EDIT
+    FIELD_REGEX = r'([A-Za-z_][A-Za-z0-9_]*)=([^;"]+)'  # EDIT parse key=value inside each hit; "" disables
     UNIQUE = True                             # EDIT
+    DEBUG_CAPTURE = True                      # EDIT print raw captures and filter decisions
     PRINT_BODY_ON_FAIL = False                # EDIT
 
     r = s.get(
@@ -421,19 +423,27 @@ def callback_url(path="", scheme="http"):
     )
     body = r.text
     dprint("conditional GET", r.url, r.status_code, "len=", len(body))
+    if DEBUG_CAPTURE:
+        print("[body-preview]", body[:1000])
     check(r.status_code in EXPECT_STATUS, f"GET bad status {r.status_code}")
 
     failures = []
     for marker in CONTAINS_ALL:
+        if DEBUG_CAPTURE:
+            print(f"[check] contains_all {marker!r} -> {marker in body}")
         if marker not in body:
             failures.append(f"missing marker: {marker}")
     if CONTAINS_ANY and not any(marker in body for marker in CONTAINS_ANY):
         failures.append("none of CONTAINS_ANY found")
     for marker in CONTAINS_NONE:
+        if DEBUG_CAPTURE:
+            print(f"[check] contains_none {marker!r} -> {marker not in body}")
         if marker in body:
             failures.append(f"blocked marker present: {marker}")
     for marker, needed in MIN_COUNTS.items():
         seen = body.count(marker)
+        if DEBUG_CAPTURE:
+            print(f"[check] count {marker!r}: {seen} needed {needed}")
         if seen < needed:
             failures.append(f"{marker!r} count {seen} < {needed}")
 
@@ -444,13 +454,22 @@ def callback_url(path="", scheme="http"):
 
     hits = []
     if EXTRACT_REGEX:
-        for hit in re.findall(EXTRACT_REGEX, body, flags=re.I | re.S):
+        raw_hits = re.findall(EXTRACT_REGEX, body, flags=re.I | re.S)
+        if DEBUG_CAPTURE:
+            print(f"[debug] regex captures: {len(raw_hits)} using {EXTRACT_REGEX!r}")
+        for i, hit in enumerate(raw_hits, 1):
             if isinstance(hit, tuple):
                 hit = " ".join(str(x) for x in hit if x is not None)
             hit = str(hit).strip()
+            if DEBUG_CAPTURE:
+                print(f"[raw-hit {i}]", hit[:500])
             if HIT_CONTAINS_ALL and not all(x in hit for x in HIT_CONTAINS_ALL):
+                if DEBUG_CAPTURE:
+                    print(f"[skip {i}] missing HIT_CONTAINS_ALL")
                 continue
             if HIT_CONTAINS_ANY and not any(x in hit for x in HIT_CONTAINS_ANY):
+                if DEBUG_CAPTURE:
+                    print(f"[skip {i}] none of HIT_CONTAINS_ANY found")
                 continue
             hits.append(hit)
     else:
@@ -462,6 +481,10 @@ def callback_url(path="", scheme="http"):
     print("[+] conditional GET matched")
     for hit in hits:
         print("[hit]", hit)
+        if FIELD_REGEX:
+            fields = dict(re.findall(FIELD_REGEX, hit))
+            if fields:
+                print("[fields]", fields)
     return hits
 `
   },
