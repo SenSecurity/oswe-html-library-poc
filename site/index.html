@@ -190,6 +190,11 @@ var PRESETS = [
     ["login-json-bearer","login_api"],
     ["proof-basic","proof"]
   ]},
+  {id:"create-user-login-proof", title:"create user -> login -> proof", steps:[
+    ["create-user-bootstrap","create_user"],
+    ["login-form-basic","login"],
+    ["proof-basic","proof"]
+  ]},
   {id:"deser-rce-proof", title:"deserialization -> RCE -> proof", steps:[
     ["deser-java-delivery","deliver_java_serialized_payload"],
     ["cmdi-runner","run_cmd"],
@@ -470,6 +475,80 @@ def callback_url(path="", scheme="http"):
     if MODE == "header":
         check("X-OSWE-Probe" in "\n".join(f"{k}: {v}" for k, v in r.headers.items()) or "X-OSWE-Probe" in r.text, "header injection marker not seen")
     return r
+`
+  },
+  {
+    id:"create-user-bootstrap",
+    title:"REPLACE login() - Create user first",
+    category:"Authentication",
+    kind:"replace",
+    chainRole:"auth",
+    defaultFunction:"create_user",
+    aliases:["create user","register","signup","sign up","account create","self registration","api user","user bootstrap","then login"],
+    useWhen:"Registration or create-user endpoint lets you create a low-priv account, then reuse that account with any normal login piece.",
+    editFirst:["CREATE_PATH","MODE","USER_FIELD","PASS_FIELD","EMAIL_FIELD","EXTRA_DATA","SUCCESS_TEXT"],
+    dependsOn:[],
+    sourceRefs:["v4"],
+    code:String.raw`def create_user():
+    # Use when: create an account first, then run login_form_basic/login_json_bearer/etc.
+    # main.py use: add this step before the login step. It updates USERNAME/PASSWORD.
+    global USERNAME, PASSWORD
+    CREATE_PATH = "/register"                    # EDIT /register, /signup, /api/users
+    PRE_CREATE_PATH = ""                         # EDIT optional page to fetch first; "" = skip
+    MODE = "json"                                # EDIT: json | form | csrf_json | csrf_form
+    USER_FIELD = "username"                      # EDIT
+    PASS_FIELD = "password"                      # EDIT
+    EMAIL_FIELD = "email"                        # EDIT set "" if not needed
+    TOKEN_REGEX = r'name="csrf" value="([^"]+)"' # EDIT for csrf_* modes
+    TOKEN_FIELD = "csrf"                         # EDIT
+    SUCCESS_TEXT = ""                            # EDIT optional marker; "" means status is enough
+    SUCCESS_CODES = (200, 201, 202, 302)         # EDIT
+    EXTRA_DATA = {}                              # EDIT e.g. {"role": "user", "confirm": PASSWORD}
+    ACCOUNT_STYLE = "args"                       # EDIT: args | timestamp
+    USER_PREFIX = "oswe_user"                    # EDIT used when ACCOUNT_STYLE=timestamp
+    EMAIL_DOMAIN = "example.invalid"             # EDIT
+
+    check(MODE in ("json", "form", "csrf_json", "csrf_form"), "bad MODE")
+    check(isinstance(EXTRA_DATA, dict), "EXTRA_DATA must be dict")
+
+    if ACCOUNT_STYLE == "timestamp":
+        suffix = str(int(time.time()))
+        new_user = f"{USER_PREFIX}_{suffix}"
+        new_pass = PASSWORD
+    else:
+        new_user = USERNAME
+        new_pass = PASSWORD
+
+    data = dict(EXTRA_DATA)
+    data[USER_FIELD] = new_user
+    data[PASS_FIELD] = new_pass
+    if EMAIL_FIELD:
+        data[EMAIL_FIELD] = f"{new_user}@{EMAIL_DOMAIN}"
+
+    if MODE.startswith("csrf_"):
+        token_path = PRE_CREATE_PATH or CREATE_PATH
+        r = s.get(url(token_path), timeout=TIMEOUT)
+        m = re.search(TOKEN_REGEX, r.text)
+        check(m, "CSRF token not found")
+        data[TOKEN_FIELD] = m.group(1)
+    elif PRE_CREATE_PATH:
+        s.get(url(PRE_CREATE_PATH), timeout=TIMEOUT)
+
+    if MODE.endswith("json"):
+        r = s.post(url(CREATE_PATH), json=data, allow_redirects=False, timeout=TIMEOUT)
+    else:
+        r = s.post(url(CREATE_PATH), data=data, allow_redirects=False, timeout=TIMEOUT)
+
+    dprint("create user status:", r.status_code, r.url)
+    dprint("create user body:", r.text[:500])
+    check(r.status_code in SUCCESS_CODES, f"create user failed with status {r.status_code}")
+    if SUCCESS_TEXT:
+        check(SUCCESS_TEXT in r.text, "create user success marker not found")
+
+    USERNAME = new_user
+    PASSWORD = new_pass
+    print(f"[+] created user: {USERNAME}:{PASSWORD}")
+    return {"username": USERNAME, "password": PASSWORD, "response": r}
 `
   },
   {
