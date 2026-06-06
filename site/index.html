@@ -200,6 +200,10 @@ var PRESETS = [
     ["http-post-request","post_step"],
     ["proof-basic","proof"]
   ]},
+  {id:"conditional-get-proof", title:"conditional GET extract -> proof", steps:[
+    ["http-get-conditional-extract","conditional_get_extract"],
+    ["proof-basic","proof"]
+  ]},
   {id:"ws-send-xss-proof", title:"WebSocket send XSS -> proof", steps:[
     ["websocket-send-payload","send_ws_xss"],
     ["proof-basic","proof"]
@@ -372,6 +376,93 @@ def callback_url(path="", scheme="http"):
     if PRINT_BODY:
         print(r.text[:1000])
     return r
+`
+  },
+  {
+    id:"http-get-conditional-extract",
+    title:"REPLACE dump() - Conditional GET extract",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"conditional_get_extract",
+    aliases:["get","conditional get","extract","regex","admin twice","contains","marker","filter","response parser","html json text"],
+    useWhen:"GET response contains many values and you only want candidates when markers/counts match, e.g. admin appears twice or admin plus another string exists.",
+    editFirst:["PATH","PARAMS","EXTRACT_REGEX","CONTAINS_ALL","MIN_COUNTS","HIT_CONTAINS_ALL"],
+    dependsOn:[],
+    sourceRefs:["v4"],
+    code:String.raw`def conditional_get_extract():
+    # Use when: GET page/API returns data and you need extract only if conditions match.
+    # Examples: admin appears 2x, response has admin + Public Discussion, hit contains admin.
+    PATH = "/api/items"                       # EDIT
+    PARAMS = {}                               # EDIT query params
+    HEADERS = {}                              # EDIT
+    COOKIES = {}                              # EDIT
+    EXPECT_STATUS = (200,)                    # EDIT
+    FOLLOW_REDIRECTS = True                   # EDIT
+
+    CONTAINS_ALL = []                         # EDIT e.g. ["admin", "Public Discussion"]
+    CONTAINS_ANY = []                         # EDIT e.g. ["role", "username"]
+    CONTAINS_NONE = []                        # EDIT e.g. ["disabled"]
+    MIN_COUNTS = {"admin": 2}                 # EDIT e.g. {"admin": 2}; {} to disable
+
+    EXTRACT_REGEX = r'"username"\s*:\s*"([^"]+)"'  # EDIT capture what you want from body
+    HIT_CONTAINS_ALL = []                     # EDIT filters each extracted hit
+    HIT_CONTAINS_ANY = []                     # EDIT
+    UNIQUE = True                             # EDIT
+    PRINT_BODY_ON_FAIL = False                # EDIT
+
+    r = s.get(
+        url(PATH),
+        params=PARAMS,
+        headers=HEADERS,
+        cookies=COOKIES,
+        allow_redirects=FOLLOW_REDIRECTS,
+        timeout=TIMEOUT,
+    )
+    body = r.text
+    dprint("conditional GET", r.url, r.status_code, "len=", len(body))
+    check(r.status_code in EXPECT_STATUS, f"GET bad status {r.status_code}")
+
+    failures = []
+    for marker in CONTAINS_ALL:
+        if marker not in body:
+            failures.append(f"missing marker: {marker}")
+    if CONTAINS_ANY and not any(marker in body for marker in CONTAINS_ANY):
+        failures.append("none of CONTAINS_ANY found")
+    for marker in CONTAINS_NONE:
+        if marker in body:
+            failures.append(f"blocked marker present: {marker}")
+    for marker, needed in MIN_COUNTS.items():
+        seen = body.count(marker)
+        if seen < needed:
+            failures.append(f"{marker!r} count {seen} < {needed}")
+
+    if failures:
+        if PRINT_BODY_ON_FAIL:
+            print(body[:1500])
+        die("; ".join(failures))
+
+    hits = []
+    if EXTRACT_REGEX:
+        for hit in re.findall(EXTRACT_REGEX, body, flags=re.I | re.S):
+            if isinstance(hit, tuple):
+                hit = " ".join(str(x) for x in hit if x is not None)
+            hit = str(hit).strip()
+            if HIT_CONTAINS_ALL and not all(x in hit for x in HIT_CONTAINS_ALL):
+                continue
+            if HIT_CONTAINS_ANY and not any(x in hit for x in HIT_CONTAINS_ANY):
+                continue
+            hits.append(hit)
+    else:
+        hits = [body]
+
+    if UNIQUE:
+        hits = list(dict.fromkeys(hits))
+
+    print("[+] conditional GET matched")
+    for hit in hits:
+        print("[hit]", hit)
+    return hits
 `
   },
   {
