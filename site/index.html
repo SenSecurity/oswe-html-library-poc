@@ -296,6 +296,88 @@ def get_loot(name, key="hit"):
     check(key in LOOT[name], f"{name}.{key} missing")
     return LOOT[name][key]
 
+def between(text, left, right, *, start=0, soft=False):
+    # Extract one value between two stable delimiters.
+    i = text.find(left, start)
+    if i == -1:
+        if soft:
+            return None
+        die(f"left delimiter not found: {left!r}")
+    i += len(left)
+    j = text.find(right, i)
+    if j == -1:
+        if soft:
+            return None
+        die(f"right delimiter not found: {right!r}")
+    return text[i:j]
+
+def regex_hits(text, pattern, *, flags=re.I | re.S, group=1):
+    # Extract regex captures in response order.
+    out = []
+    for match in re.findall(pattern, text, flags=flags):
+        if isinstance(match, tuple):
+            value = match[group - 1] if len(match) >= group else match[0]
+        else:
+            value = match
+        value = str(value).strip()
+        if value:
+            out.append(value)
+    return out
+
+def filter_hits(hits, *, contains_all=None, contains_any=None, contains_none=None):
+    # Keep/reject candidate rows or values.
+    contains_all = contains_all or []
+    contains_any = contains_any or []
+    contains_none = contains_none or []
+    out = []
+    for hit in hits:
+        hit = str(hit).strip()
+        if not hit:
+            continue
+        if contains_all and not all(x in hit for x in contains_all):
+            continue
+        if contains_any and not any(x in hit for x in contains_any):
+            continue
+        if contains_none and any(x in hit for x in contains_none):
+            continue
+        out.append(hit)
+    return out
+
+def pick_hit(hits, select="last", *, dedupe=False, name="hit"):
+    # Choose first/last/all after filtering.
+    check(select in ("first", "last", "all"), "select must be first, last, or all")
+    hits = [str(x).strip() for x in hits if str(x).strip()]
+    if dedupe:
+        hits = list(dict.fromkeys(hits))
+    check(hits, f"{name} missing")
+    if select == "first":
+        return hits[0], [hits[0]]
+    if select == "last":
+        return hits[-1], [hits[-1]]
+    return hits[0], hits
+
+def save_hit(name, hits, *, select="last", dedupe=False, fields_regex="", resp=None):
+    # Save selected value. Later:
+    #   HEADERS = {"Authorization": f"Bearer {get_loot('admin_token')}"}
+    #   COOKIES = {"token": get_loot("admin_token")}
+    global LOOT_HITS, LOOT_HIT, LOOT_FIELDS
+    hit, selected = pick_hit(hits, select=select, dedupe=dedupe, name=name)
+    fields = dict(re.findall(fields_regex, hit)) if fields_regex else {}
+    LOOT_HITS, LOOT_HIT, LOOT_FIELDS = selected, hit, fields
+    save_loot(name, hit, hits=selected, fields=fields, resp=resp)
+    print(f"[+] {name}: {hit}")
+    return hit
+
+def json_get(data, path, default=None):
+    # Walk JSON by keys/indexes, e.g. ("data", 0, "token").
+    node = data
+    try:
+        for key in path:
+            node = node[key]
+        return node
+    except (KeyError, TypeError, IndexError):
+        return default
+
 def parse_args():
     global TARGET, LHOST, LPORT, USERNAME, PASSWORD, PROXY, DEBUG, VERIFY_TLS, TIMEOUT
     p = argparse.ArgumentParser(description="OSWE proof-of-concept exploit")
@@ -445,7 +527,7 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
     aliases:["get","explicit get","extract","between","regex","admin twice","contains","marker","filter","response parser","html json text"],
     useWhen:"GET response contains a value you need later. Keep request constants visible, filter rows/items, extract one value, save it with save_loot().",
     editFirst:["SAVE_NAME","PATH","HEADERS","COOKIES","SESSION_COOKIES","ROW_SPLIT","ROW_ALL","VALUE_MODE","VALUE_LEFT","VALUE_RIGHT","VALUE_REGEX","SELECT_HIT"],
-    dependsOn:["http-extract-helper-kit"],
+    dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def conditional_get_extract():
     # Use when: one GET leaks a value you need later.
@@ -547,7 +629,7 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
     chainRole:"helper",
     defaultFunction:"save_hit",
     aliases:["extract helper","named loot","json extract","between extract","regex extract","multiple loot","csrf token","admin token","pick last"],
-    useWhen:"Small helpers for exam scripts: extract between delimiters, regex captures, filter hits, choose first/last/all, and save named loot.",
+    useWhen:"Reference/legacy copy of the helpers already included in START HERE base. Use only if you copied an older base manually.",
     editFirst:["normally do not edit; call helpers from explicit request steps"],
     dependsOn:[],
     sourceRefs:["v4","Burp token refresh pattern","OSWE scripting reviews"],
@@ -678,7 +760,7 @@ def json_get(data, path, default=None):
     aliases:["named extract","get loot","save loot","admin token","csrf","api key","json extract","between extract","lines extract"],
     useWhen:"You want a normal exam-style step with EDIT constants, but still want the value saved as get_loot(NAME) for later steps.",
     editFirst:["NAME","PATH","HEADERS","COOKIES","SESSION_COOKIES","ROW_SPLIT","ROW_ALL","VALUE_MODE","VALUE_LEFT","VALUE_RIGHT","VALUE_REGEX","JSON_PATH","SELECT_HIT"],
-    dependsOn:["http-extract-helper-kit"],
+    dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def extract_named_value():
     # Use when: extract one reusable value from one explicit GET.
