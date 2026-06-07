@@ -579,14 +579,14 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
   },
   {
     id:"http-get-advanced-named-extract",
-    title:"REPLACE dump() - Advanced named GET extractor",
-    category:"HTTP / Session",
-    kind:"replace",
-    chainRole:"extract",
+    title:"ADD - Advanced named GET extractor helper",
+    category:"Helpers",
+    kind:"add",
+    chainRole:"helper",
     defaultFunction:"conditional_get_extract_named",
     aliases:["advanced extract","named loot","json extract","between extract","split extract","regex extract","multiple loot","csrf token","admin token"],
-    useWhen:"You need several reusable extracts in one exploit, or the response is easier to parse as JSON, between delimiters, split rows, lines, words, whole body, or regex.",
-    editFirst:["name","path","headers","cookies","session_cookies","mode","select_hit","hit_all","json_path","item_regex"],
+    useWhen:"Helper used by named extract steps when one exploit needs several reusable values, or the response is easier to parse as JSON, between delimiters, split rows, lines, words, whole body, or regex.",
+    editFirst:["do not edit usually; call it from a wrapper step"],
     dependsOn:[],
     sourceRefs:["Claude Code suggestion","v4"],
     code:String.raw`def conditional_get_extract_named(
@@ -769,6 +769,95 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
     for i, item in enumerate(hits, 1):
         print(f"[{name}] [hit {i}]", item)
     return LOOT[name]
+`
+  },
+  {
+    id:"http-get-named-extract-step",
+    title:"REPLACE dump() - Named GET extract step",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"extract_named_value",
+    aliases:["named extract","get loot","save loot","admin token","csrf","api key","json extract","between extract","lines extract"],
+    useWhen:"You want a normal exam-style step with EDIT constants, but still want the value saved as get_loot(NAME) for later steps.",
+    editFirst:["NAME","PATH","HEADERS","COOKIES","SESSION_COOKIES","MODE","HIT_ALL","SELECT_HIT","ITEM_REGEX","JSON_PATH"],
+    dependsOn:["http-get-advanced-named-extract"],
+    sourceRefs:["v4"],
+    code:String.raw`def extract_named_value():
+    # Use when: extract one reusable value and save it under a stable name.
+    # main.py use: duplicate and rename for extract_admin_token(), extract_csrf(), extract_api_key(), etc.
+    NAME = "admin_token"                 # EDIT used later as get_loot("admin_token")
+    PATH = "/api/items"                  # EDIT
+    PARAMS = {}                          # EDIT query params
+    HEADERS = {}                         # EDIT e.g. {"Authorization": f"Bearer {AUTH_TOKEN}"}
+    COOKIES = {}                         # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True               # EDIT False = only COOKIES above
+    EXPECT_STATUS = (200,)               # EDIT
+    FOLLOW_REDIRECTS = True              # EDIT
+
+    # Pick the simplest MODE that matches the response.
+    MODE = "lines"                       # EDIT: lines | between | split | json | words | whole | regex
+
+    # Good default for "find the line/row first, split later".
+    HIT_ALL = ["token=", "username=admin"] # EDIT markers that must be in the extracted item
+    HIT_ANY = []                         # EDIT optional
+    HIT_NONE = []                        # EDIT optional
+    SELECT_HIT = "last"                  # EDIT: all | first | last
+
+    # MODE=between knobs.
+    BETWEEN_LEFT = "token="              # EDIT
+    BETWEEN_RIGHT = ";"                  # EDIT
+
+    # MODE=split knobs.
+    SPLIT_SEP = "\n"                     # EDIT row separator
+    SPLIT_INDEX = 0                      # EDIT selected column index
+    SPLIT_COL_SEP = None                 # EDIT e.g. ":" or ","; None disables column split
+
+    # MODE=json knobs.
+    JSON_PATH = ("data", 0, "token")     # EDIT keys/indexes to walk
+    JSON_COLLECT = False                 # EDIT True when JSON_PATH points to a list
+    JSON_ITEM_KEY = "token"              # EDIT key to collect from each list item
+
+    # MODE=regex fallback.
+    ITEM_REGEX = r'token=([^;"]+);\s*username=admin'  # EDIT last resort
+
+    DEDUPE = False                       # EDIT
+    SOFT = False                         # EDIT True returns None instead of dying
+    DEBUG_EXTRACT = True                 # EDIT
+
+    result = conditional_get_extract_named(
+        name=NAME,
+        path=PATH,
+        params=PARAMS,
+        headers=HEADERS,
+        cookies=COOKIES,
+        session_cookies=SESSION_COOKIES,
+        expect_status=EXPECT_STATUS,
+        follow_redirects=FOLLOW_REDIRECTS,
+        mode=MODE,
+        between_left=BETWEEN_LEFT,
+        between_right=BETWEEN_RIGHT,
+        split_sep=SPLIT_SEP,
+        split_index=SPLIT_INDEX,
+        split_col_sep=SPLIT_COL_SEP,
+        json_path=JSON_PATH,
+        json_collect=JSON_COLLECT,
+        json_item_key=JSON_ITEM_KEY,
+        item_regex=ITEM_REGEX,
+        hit_all=HIT_ALL,
+        hit_any=HIT_ANY,
+        hit_none=HIT_NONE,
+        select_hit=SELECT_HIT,
+        dedupe=DEDUPE,
+        soft=SOFT,
+        debug=DEBUG_EXTRACT,
+    )
+
+    # Optional: if MODE=lines returns a full line, derive the final value here.
+    # line = get_loot(NAME)
+    # token = line.split("token=", 1)[1].split(";", 1)[0]
+    # save_loot(NAME, token, hits=[token], resp=result["resp"])
+    return result
 `
   },
   {
