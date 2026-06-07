@@ -387,7 +387,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"conditional_get_extract",
     aliases:["get","conditional get","extract","regex","admin twice","contains","marker","filter","response parser","html json text"],
     useWhen:"GET response contains many values and you only want candidates when markers/counts match, e.g. admin appears twice or admin plus another string exists.",
-    editFirst:["PATH","PARAMS","EXTRACT_REGEX","CONTAINS_ALL","MIN_COUNTS","HIT_CONTAINS_ALL","USE_LAST_HIT","DEBUG_CAPTURE"],
+    editFirst:["PATH","PARAMS","EXTRACT_REGEX","CONTAINS_ALL","MIN_COUNTS","HIT_CONTAINS_ALL","USE_LAST_HIT","LAST_HIT_FROM_RAW","DEBUG_CAPTURE"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def conditional_get_extract():
@@ -432,6 +432,7 @@ def callback_url(path="", scheme="http"):
     FIELD_REGEX = r'([A-Za-z_][A-Za-z0-9_]*)=([^;"]+)'  # EDIT parses "token=...; username=..."; "" disables
     UNIQUE = True                             # EDIT remove duplicate hits while keeping order
     USE_LAST_HIT = False                      # EDIT True keeps only the last hit after filters
+    LAST_HIT_FROM_RAW = True                  # EDIT True = last filtered hit in response order; False = last after UNIQUE
     DEBUG_CAPTURE = True                      # EDIT prints body preview, raw captures, skips, parsed fields
     PRINT_BODY_ON_FAIL = False                # EDIT True when gates fail and you need to see response
 
@@ -499,12 +500,18 @@ def callback_url(path="", scheme="http"):
     else:
         hits = [body]
 
-    if UNIQUE:
+    filtered_hits = list(hits)                # preserved response order after HIT_CONTAINS_* filters
+
+    if USE_LAST_HIT and LAST_HIT_FROM_RAW and filtered_hits:
+        if DEBUG_CAPTURE:
+            print(f"[debug] USE_LAST_HIT=True, LAST_HIT_FROM_RAW=True, keeping raw filtered hit {len(filtered_hits)}")
+        hits = [filtered_hits[-1]]
+    elif UNIQUE:
         hits = list(dict.fromkeys(hits))
 
-    if USE_LAST_HIT and hits:
+    if USE_LAST_HIT and (not LAST_HIT_FROM_RAW) and hits:
         if DEBUG_CAPTURE:
-            print(f"[debug] USE_LAST_HIT=True, keeping hit {len(hits)} only")
+            print(f"[debug] USE_LAST_HIT=True, LAST_HIT_FROM_RAW=False, keeping unique hit {len(hits)}")
         hits = [hits[-1]]
 
     LOOT_HITS = hits
