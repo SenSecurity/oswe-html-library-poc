@@ -533,7 +533,34 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
     editFirst:["normally do not edit; call helpers from explicit request steps"],
     dependsOn:[],
     sourceRefs:["v4","Burp token refresh pattern","OSWE scripting reviews"],
-    code:String.raw`def between(text, left, right, *, start=0, soft=False):
+    code:String.raw`try:
+    LOOT
+except NameError:
+    LOOT = {}
+
+
+def save_loot(name, value, *, hits=None, fields=None, resp=None):
+    # Named store for values reused later: tokens, CSRFs, API keys, IDs.
+    check(value not in (None, ""), f"{name} missing")
+    LOOT[name] = {
+        "hit": value,
+        "hits": hits if hits is not None else [value],
+        "fields": fields or {},
+        "resp": resp,
+    }
+    print(f"[loot] {name} = {value}")
+    return value
+
+
+def get_loot(name, key="hit"):
+    check(name in LOOT, f"{name} missing")
+    if key is None:
+        return LOOT[name]
+    check(key in LOOT[name], f"{name}.{key} missing")
+    return LOOT[name][key]
+
+
+def between(text, left, right, *, start=0, soft=False):
     # Small primitive: one value between two delimiters.
     i = text.find(left, start)
     if i == -1:
