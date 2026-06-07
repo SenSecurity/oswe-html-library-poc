@@ -501,7 +501,11 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
             value = between(row, VALUE_LEFT, VALUE_RIGHT, soft=True)
         elif VALUE_MODE == "regex":
             found = regex_hits(row, VALUE_REGEX)
-            value = found[0] if found else None
+            if DEBUG_EXTRACT:
+                print(f"[row {i}]", row[:300])
+                print(f"[regex {i}]", found)
+            hits.extend(found)
+            continue
         elif VALUE_MODE == "whole":
             value = row
         else:
@@ -719,7 +723,11 @@ def json_get(data, path, default=None):
                 value = between(row, VALUE_LEFT, VALUE_RIGHT, soft=True)
             elif VALUE_MODE == "regex":
                 found = regex_hits(row, VALUE_REGEX)
-                value = found[0] if found else None
+                if DEBUG_EXTRACT:
+                    print(f"[row {i}]", row[:300])
+                    print(f"[regex {i}]", found)
+                hits.extend(found)
+                continue
             elif VALUE_MODE == "whole":
                 value = row
             else:
