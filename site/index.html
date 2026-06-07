@@ -346,7 +346,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"http_get_request",
     aliases:["get","request","specific get","params","headers","cookies","probe","endpoint","burp"],
     useWhen:"You need one explicit GET step in the exploit chain. Duplicate it and rename the function for multiple target-specific GETs.",
-    editFirst:["PATH","PARAMS","HEADERS","COOKIES","EXPECT_STATUS","EXPECT_TEXT"],
+    editFirst:["PATH","AUTH_MODE","AUTH_TOKEN_VALUE","HEADERS","COOKIES","EXPECT_STATUS","EXPECT_TEXT"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def http_get_request():
@@ -354,18 +354,38 @@ def callback_url(path="", scheme="http"):
     # main.py use: duplicate this step and rename it for get_profile(), get_token(), etc.
     PATH = "/api/item"                  # EDIT
     PARAMS = {"id": "1"}                # EDIT query string params; {} if none
-    HEADERS = {}                        # EDIT e.g. {"X-Api-Key": "REPLACE"}
-    COOKIES = {}                        # EDIT e.g. {"debug": "1"}; session cookies already included
+    HEADERS = {}                        # EDIT custom per-request headers
+    COOKIES = {}                        # EDIT custom per-request cookies
+    AUTH_MODE = "none"                  # EDIT: none | session | bearer | cookie | custom
+    AUTH_TOKEN_VALUE = None             # EDIT None uses LOOT_HIT or AUTH_TOKEN; or set a string
+    BEARER_PREFIX = "Bearer"            # EDIT
+    COOKIE_NAME = "token"               # EDIT for AUTH_MODE=cookie
+    AUTH_HEADERS = {}                   # EDIT for AUTH_MODE=custom, e.g. {"X-Api-Key": LOOT_HIT}
     EXPECT_STATUS = (200,)              # EDIT e.g. (200, 302)
     EXPECT_TEXT = ""                    # EDIT optional marker in response body
     FOLLOW_REDIRECTS = True             # EDIT
     PRINT_BODY = True                   # EDIT
 
+    headers = dict(HEADERS)
+    cookies = dict(COOKIES)
+    token_value = AUTH_TOKEN_VALUE if AUTH_TOKEN_VALUE is not None else (globals().get("LOOT_HIT") or globals().get("AUTH_TOKEN"))
+    check(AUTH_MODE in ("none", "session", "bearer", "cookie", "custom"), "bad AUTH_MODE")
+    if AUTH_MODE != "session":
+        s.headers.pop("Authorization", None)  # avoid stale Bearer from older steps
+    if AUTH_MODE == "bearer":
+        check(token_value, "AUTH_MODE=bearer needs AUTH_TOKEN_VALUE, LOOT_HIT, or AUTH_TOKEN")
+        headers["Authorization"] = f"{BEARER_PREFIX} {token_value}"
+    elif AUTH_MODE == "cookie":
+        check(token_value, "AUTH_MODE=cookie needs AUTH_TOKEN_VALUE, LOOT_HIT, or AUTH_TOKEN")
+        cookies[COOKIE_NAME] = token_value
+    elif AUTH_MODE == "custom":
+        headers.update(AUTH_HEADERS)
+
     r = s.get(
         url(PATH),
         params=PARAMS,
-        headers=HEADERS,
-        cookies=COOKIES,
+        headers=headers,
+        cookies=cookies,
         allow_redirects=FOLLOW_REDIRECTS,
         timeout=TIMEOUT,
     )
@@ -527,7 +547,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"http_post_request",
     aliases:["post","request","specific post","form","json","raw body","headers","cookies","endpoint","burp"],
     useWhen:"You need one explicit POST step in the exploit chain. Supports form, JSON, or raw body.",
-    editFirst:["PATH","MODE","PARAMS","FORM_DATA","JSON_BODY","RAW_BODY","HEADERS","EXPECT_STATUS","EXPECT_TEXT"],
+    editFirst:["PATH","MODE","AUTH_MODE","AUTH_TOKEN_VALUE","PARAMS","FORM_DATA","JSON_BODY","RAW_BODY","HEADERS","EXPECT_STATUS","EXPECT_TEXT"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def http_post_request():
@@ -539,18 +559,38 @@ def callback_url(path="", scheme="http"):
     FORM_DATA = {"name": "test"}        # EDIT for MODE=form
     JSON_BODY = {"name": "test"}        # EDIT for MODE=json
     RAW_BODY = "name=test"              # EDIT for MODE=raw
-    HEADERS = {}                        # EDIT Content-Type if MODE=raw
-    COOKIES = {}                        # EDIT if needed
+    HEADERS = {}                        # EDIT custom per-request headers; Content-Type if MODE=raw
+    COOKIES = {}                        # EDIT custom per-request cookies
+    AUTH_MODE = "none"                  # EDIT: none | session | bearer | cookie | custom
+    AUTH_TOKEN_VALUE = None             # EDIT None uses LOOT_HIT or AUTH_TOKEN; or set a string
+    BEARER_PREFIX = "Bearer"            # EDIT
+    COOKIE_NAME = "token"               # EDIT for AUTH_MODE=cookie
+    AUTH_HEADERS = {}                   # EDIT for AUTH_MODE=custom, e.g. {"X-Api-Key": LOOT_HIT}
     EXPECT_STATUS = (200, 201, 202, 302) # EDIT
     EXPECT_TEXT = ""                    # EDIT optional marker in response body
     FOLLOW_REDIRECTS = True             # EDIT
     PRINT_BODY = True                   # EDIT
 
     check(MODE in ("form", "json", "raw"), "bad MODE")
+    headers = dict(HEADERS)
+    cookies = dict(COOKIES)
+    token_value = AUTH_TOKEN_VALUE if AUTH_TOKEN_VALUE is not None else (globals().get("LOOT_HIT") or globals().get("AUTH_TOKEN"))
+    check(AUTH_MODE in ("none", "session", "bearer", "cookie", "custom"), "bad AUTH_MODE")
+    if AUTH_MODE != "session":
+        s.headers.pop("Authorization", None)  # avoid stale Bearer from older steps
+    if AUTH_MODE == "bearer":
+        check(token_value, "AUTH_MODE=bearer needs AUTH_TOKEN_VALUE, LOOT_HIT, or AUTH_TOKEN")
+        headers["Authorization"] = f"{BEARER_PREFIX} {token_value}"
+    elif AUTH_MODE == "cookie":
+        check(token_value, "AUTH_MODE=cookie needs AUTH_TOKEN_VALUE, LOOT_HIT, or AUTH_TOKEN")
+        cookies[COOKIE_NAME] = token_value
+    elif AUTH_MODE == "custom":
+        headers.update(AUTH_HEADERS)
+
     kwargs = {
         "params": PARAMS,
-        "headers": HEADERS,
-        "cookies": COOKIES,
+        "headers": headers,
+        "cookies": cookies,
         "allow_redirects": FOLLOW_REDIRECTS,
         "timeout": TIMEOUT,
     }
@@ -880,24 +920,40 @@ def callback_url(path="", scheme="http"):
     chainRole:"auth",
     defaultFunction:"login_json_bearer",
     aliases:["login","json","bearer","api token","authorization"],
-    useWhen:"API login returns a token that must be placed in Authorization header.",
-    editFirst:["LOGIN_PATH","TOKEN_KEY","SUCCESS_CODES"],
+    useWhen:"API login returns a token. Stores it as AUTH_TOKEN; install it into session only if you explicitly choose that.",
+    editFirst:["LOGIN_PATH","REQUEST_MODE","TOKEN_KEY","INSTALL_SESSION_AUTH","SUCCESS_CODES"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def login_json_bearer():
-    LOGIN_PATH = "/api/login"       # EDIT
-    TOKEN_KEY = "token"             # EDIT
-    SUCCESS_CODES = (200, 201)      # EDIT
+    # Stores token globally. Does not force future requests to use it unless INSTALL_SESSION_AUTH=True.
+    # Later GET/POST snippets can use AUTH_MODE=bearer/cookie and AUTH_TOKEN_VALUE=None to reuse AUTH_TOKEN.
+    global AUTH_TOKEN, token
+    LOGIN_PATH = "/api/login"          # EDIT
+    REQUEST_MODE = "json"              # EDIT: json | form
+    TOKEN_KEY = "token"                # EDIT e.g. token/access_token/jwt
+    TOKEN_PREFIX = "Bearer"            # EDIT
+    INSTALL_SESSION_AUTH = False       # EDIT True only if all future s requests should use this token
+    SUCCESS_CODES = (200, 201)         # EDIT
 
+    s.headers.pop("Authorization", None)  # clear stale token from previous steps/runs in this session
     body = {"username": USERNAME, "password": PASSWORD}
-    r = s.post(url(LOGIN_PATH), json=body, timeout=TIMEOUT)
+    if REQUEST_MODE == "json":
+        r = s.post(url(LOGIN_PATH), json=body, timeout=TIMEOUT)
+    elif REQUEST_MODE == "form":
+        r = s.post(url(LOGIN_PATH), data=body, timeout=TIMEOUT)
+    else:
+        die("bad REQUEST_MODE")
     check(r.status_code in SUCCESS_CODES, f"bad login status {r.status_code}")
 
-    token = r.json().get(TOKEN_KEY)
-    check(token, "token missing in login response")
-    s.headers.update({"Authorization": f"Bearer {token}"})
-    print("[+] bearer token installed")
-    return token
+    AUTH_TOKEN = r.json().get(TOKEN_KEY)
+    check(AUTH_TOKEN, "token missing in login response")
+    token = AUTH_TOKEN  # compatibility with older snippets that use variable named token
+    if INSTALL_SESSION_AUTH:
+        s.headers.update({"Authorization": f"{TOKEN_PREFIX} {AUTH_TOKEN}"})
+        print("[+] bearer token installed in session headers")
+    else:
+        print("[+] bearer token stored as AUTH_TOKEN")
+    return AUTH_TOKEN
 `
   },
   {
