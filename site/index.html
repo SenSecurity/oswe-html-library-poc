@@ -258,6 +258,7 @@ TIMEOUT = 12                     # override with --timeout
 HEADERS = {}                     # EDIT explicit headers, e.g. {"Authorization": "Bearer REPLACE"}
 COOKIES = {}                     # EDIT explicit cookies, e.g. {"token": "REPLACE"}
 SESSION_COOKIES = True           # EDIT True keeps cookies learned by login()
+LOOT = {}                        # named extracted values reused by later steps
 
 s = requests.Session()
 s.verify = VERIFY_TLS
@@ -276,6 +277,24 @@ def check(cond, msg):
 def dprint(*args, **kwargs):
     if DEBUG:
         print("[debug]", *args, **kwargs)
+
+def save_loot(name, value, *, hits=None, fields=None, resp=None):
+    check(value not in (None, ""), f"{name} missing")
+    LOOT[name] = {
+        "hit": value,
+        "hits": hits if hits is not None else [value],
+        "fields": fields or {},
+        "resp": resp,
+    }
+    print(f"[loot] {name} = {value}")
+    return value
+
+def get_loot(name, key="hit"):
+    check(name in LOOT, f"{name} missing")
+    if key is None:
+        return LOOT[name]
+    check(key in LOOT[name], f"{name}.{key} missing")
+    return LOOT[name][key]
 
 def parse_args():
     global TARGET, LHOST, LPORT, USERNAME, PASSWORD, PROXY, DEBUG, VERIFY_TLS, TIMEOUT
@@ -423,7 +442,7 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
     defaultFunction:"conditional_get_extract",
     aliases:["get","conditional get","extract","regex","admin twice","contains","marker","filter","response parser","html json text"],
     useWhen:"GET response contains many repeated values and you need a simple body-check, regex extract, hit filter, and first/last/all selector.",
-    editFirst:["PATH","HEADERS","COOKIES","SESSION_COOKIES","ITEM_REGEX","HIT_ALL","SELECT_HIT","DEDUPE","FIELD_REGEX","DEBUG"],
+    editFirst:["SAVE_NAME","PATH","HEADERS","COOKIES","SESSION_COOKIES","ITEM_REGEX","HIT_ALL","SELECT_HIT","DEDUPE","FIELD_REGEX","DEBUG"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def conditional_get_extract():
@@ -442,6 +461,7 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
     global LOOT_HITS, LOOT_HIT, LOOT_FIELDS
     LOOT_HITS, LOOT_HIT, LOOT_FIELDS = [], None, {}
 
+    SAVE_NAME = "loot"                         # EDIT name used by get_loot("loot")
     PATH = "/api/items"                       # EDIT e.g. /group/13/messages
     PARAMS = {}                               # EDIT query params
     HEADERS = {}                              # EDIT e.g. {"Authorization": "Bearer REPLACE"}
@@ -552,7 +572,203 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
     if DEBUG:
         print("[loot] LOOT_HIT =", LOOT_HIT)
         print("[loot] LOOT_FIELDS =", LOOT_FIELDS)
+    if LOOT_HIT:
+        save_loot(SAVE_NAME, LOOT_HIT, hits=LOOT_HITS, fields=LOOT_FIELDS, resp=r)
     return LOOT_HITS
+`
+  },
+  {
+    id:"http-get-advanced-named-extract",
+    title:"REPLACE dump() - Advanced named GET extractor",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"conditional_get_extract_named",
+    aliases:["advanced extract","named loot","json extract","between extract","split extract","regex extract","multiple loot","csrf token","admin token"],
+    useWhen:"You need several reusable extracts in one exploit, or the response is easier to parse as JSON, between delimiters, split rows, lines, words, whole body, or regex.",
+    editFirst:["name","path","headers","cookies","session_cookies","mode","select_hit","hit_all","json_path","item_regex"],
+    dependsOn:[],
+    sourceRefs:["Claude Code suggestion","v4"],
+    code:String.raw`def conditional_get_extract_named(
+    name="loot",
+    path="/api/items",
+    params=None,
+    headers=None,
+    cookies=None,
+    session_cookies=True,
+    expect_status=(200,),
+    follow_redirects=True,
+    body_all=None,
+    body_any=None,
+    body_none=None,
+    body_min_counts=None,
+    mode="regex",                 # between | split | json | lines | words | whole | regex
+    between_left='value="',
+    between_right='"',
+    split_sep="\n",
+    split_index=0,
+    split_col_sep=None,
+    json_path=("data", 0, "token"),
+    json_collect=False,
+    json_item_key="name",
+    item_regex=r'"username"\s*:\s*"([^"]+)"',
+    hit_all=None,
+    hit_any=None,
+    hit_none=None,
+    select_hit="all",             # all | first | last
+    dedupe=False,
+    soft=False,                   # True returns None instead of die()
+    debug=True,
+):
+    # Use when: one exploit needs multiple named values.
+    # main.py use:
+    #   conditional_get_extract_named(name="admin_token", path="/group/13/messages", ...)
+    #   HEADERS = {"Authorization": f"Bearer {get_loot('admin_token')}"}
+    global LOOT_HITS, LOOT_HIT, LOOT_FIELDS
+
+    params = params or {}
+    headers = headers or {}
+    cookies = cookies or {}
+    body_all = body_all or []
+    body_any = body_any or []
+    body_none = body_none or []
+    body_min_counts = body_min_counts or {}
+    hit_all = hit_all or []
+    hit_any = hit_any or []
+    hit_none = hit_none or []
+
+    def fail(msg):
+        if soft:
+            if debug:
+                print(f"[soft-fail {name}] {msg}")
+            return None
+        die(f"[{name}] {msg}")
+
+    r = send_request(
+        "GET", path,
+        params=params,
+        headers=headers,
+        cookies=cookies,
+        session_cookies=session_cookies,
+        allow_redirects=follow_redirects,
+    )
+    body = r.text
+    dprint("named GET extract", name, r.url, r.status_code, "len=", len(body))
+    if debug:
+        print(f"[{name}] [body-preview]", body[:1000])
+    if r.status_code not in expect_status:
+        return fail(f"GET bad status {r.status_code}")
+
+    for marker in body_all:
+        if debug:
+            print(f"[{name}] [body all] {marker!r} -> {marker in body}")
+        if marker not in body:
+            return fail(f"body missing marker: {marker}")
+    if body_any and not any(marker in body for marker in body_any):
+        return fail("body has none of body_any")
+    for marker in body_none:
+        if marker in body:
+            return fail(f"body blocked marker present: {marker}")
+    for marker, needed in body_min_counts.items():
+        seen = body.count(marker)
+        if debug:
+            print(f"[{name}] [body count] {marker!r}: {seen} needed {needed}")
+        if seen < needed:
+            return fail(f"body count {marker!r} {seen} < {needed}")
+
+    raw_items = []
+    if mode == "between":
+        start = 0
+        while True:
+            i = body.find(between_left, start)
+            if i == -1:
+                break
+            i += len(between_left)
+            j = body.find(between_right, i)
+            if j == -1:
+                break
+            raw_items.append(body[i:j])
+            start = j + len(between_right)
+    elif mode == "split":
+        for row in body.split(split_sep):
+            item = row
+            if split_col_sep is not None:
+                cols = row.split(split_col_sep)
+                if len(cols) <= split_index:
+                    continue
+                item = cols[split_index]
+            raw_items.append(item)
+    elif mode == "json":
+        try:
+            data = r.json()
+        except ValueError as e:
+            return fail(f"response not JSON: {e}")
+        node = data
+        try:
+            for key in json_path:
+                node = node[key]
+        except (KeyError, TypeError, IndexError) as e:
+            return fail(f"json_path failed: {e}")
+        if json_collect:
+            for item in node:
+                try:
+                    raw_items.append(item[json_item_key])
+                except (KeyError, TypeError, IndexError):
+                    continue
+        else:
+            raw_items.append(node)
+    elif mode == "lines":
+        raw_items = body.splitlines()
+    elif mode == "words":
+        raw_items = body.split()
+    elif mode == "whole":
+        raw_items = [body]
+    elif mode == "regex":
+        raw_items = re.findall(item_regex, body, flags=re.I | re.S) if item_regex else [body]
+    else:
+        return fail(f"unknown mode: {mode}")
+
+    if debug:
+        print(f"[{name}] [extract] mode={mode} -> {len(raw_items)} raw items")
+
+    hits = []
+    for i, item in enumerate(raw_items, 1):
+        if isinstance(item, tuple):
+            item = " ".join(str(x) for x in item if x is not None)
+        item = str(item).strip()
+        if not item:
+            continue
+        if debug:
+            print(f"[{name}] [raw {i}]", item[:500])
+        if hit_all and not all(marker in item for marker in hit_all):
+            continue
+        if hit_any and not any(marker in item for marker in hit_any):
+            continue
+        if hit_none and any(marker in item for marker in hit_none):
+            continue
+        hits.append(item)
+
+    if dedupe:
+        hits = list(dict.fromkeys(hits))
+
+    check(select_hit in ("all", "first", "last"), "select_hit must be all, first, or last")
+    if select_hit == "first" and hits:
+        hits = [hits[0]]
+    elif select_hit == "last" and hits:
+        hits = [hits[-1]]
+
+    hit = hits[0] if hits else None
+    if hit in (None, ""):
+        return fail("no hits")
+
+    fields = {}
+    LOOT_HITS, LOOT_HIT, LOOT_FIELDS = hits, hit, fields
+    save_loot(name, hit, hits=hits, fields=fields, resp=r)
+
+    print(f"[+] [{name}] matched {len(hits)} hit(s) via mode={mode}")
+    for i, item in enumerate(hits, 1):
+        print(f"[{name}] [hit {i}]", item)
+    return LOOT[name]
 `
   },
   {
