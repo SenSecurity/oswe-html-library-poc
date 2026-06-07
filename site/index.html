@@ -452,6 +452,9 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
     # Exam pattern:
     #   request is explicit here, not hidden in a generic extractor.
     #   filter rows/items first, then extract the value, then save_loot().
+    # Later use:
+    #   HEADERS = {"Authorization": f"Bearer {get_loot('loot')}"}
+    #   COOKIES = {"token": get_loot("loot")}
     SAVE_NAME = "loot"                  # EDIT later: get_loot("loot")
     PATH = "/api/items"                 # EDIT e.g. /group/13/messages
     PARAMS = {}                         # EDIT query params
@@ -641,7 +644,10 @@ def pick_hit(hits, select="last", *, dedupe=False, name="hit"):
 
 def save_hit(name, hits, *, select="last", dedupe=False, fields_regex="", resp=None):
     # Save a selected value globally and by name.
-    # Later use: get_loot(name), get_loot(name, "hits"), get_loot(name, "fields").
+    # Later use the saved value with get_loot(name):
+    #   HEADERS = {"Authorization": f"Bearer {get_loot('admin_token')}"}
+    #   COOKIES = {"token": get_loot("admin_token")}
+    #   all_hits = get_loot("admin_token", "hits")
     global LOOT_HITS, LOOT_HIT, LOOT_FIELDS
     hit, selected = pick_hit(hits, select=select, dedupe=dedupe, name=name)
     fields = dict(re.findall(fields_regex, hit)) if fields_regex else {}
@@ -677,6 +683,9 @@ def json_get(data, path, default=None):
     code:String.raw`def extract_named_value():
     # Use when: extract one reusable value from one explicit GET.
     # main.py use: duplicate and rename for extract_admin_token(), extract_csrf(), extract_api_key(), etc.
+    # Later use:
+    #   HEADERS = {"Authorization": f"Bearer {get_loot('admin_token')}"}
+    #   COOKIES = {"token": get_loot("admin_token")}
     NAME = "admin_token"                # EDIT later: get_loot("admin_token")
     PATH = "/api/items"                 # EDIT exact path from Burp/source
     PARAMS = {}                         # EDIT query params
