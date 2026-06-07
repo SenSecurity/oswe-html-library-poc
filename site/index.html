@@ -622,6 +622,124 @@ def send_request(method, path, *, params=None, data=None, json_body=None, header
 `
   },
   {
+    id:"http-get-polling-extract",
+    title:"REPLACE dump() - Polling GET extract",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"polling_get_extract",
+    aliases:["poll","polling","wait","retry","bot","admin","websocket","delayed extract","eventual token","async"],
+    useWhen:"A bot/admin/background job/websocket writes the value later. Repeat one GET until the value appears, then save it with get_loot().",
+    editFirst:["SAVE_NAME","PATH","HEADERS","COOKIES","SESSION_COOKIES","MAX_ATTEMPTS","SLEEP_SECONDS","ROW_SPLIT","ROW_ALL","VALUE_MODE","VALUE_LEFT","VALUE_RIGHT","VALUE_REGEX","SELECT_HIT"],
+    dependsOn:[],
+    sourceRefs:["v4"],
+    code:String.raw`def polling_get_extract():
+    # Use when: value appears later after admin/bot/job/websocket action.
+    # Later use:
+    #   HEADERS = {"Authorization": f"Bearer {get_loot('admin_token')}"}
+    #   COOKIES = {"token": get_loot("admin_token")}
+    SAVE_NAME = "loot"                  # EDIT later: get_loot("loot")
+    PATH = "/api/items"                 # EDIT
+    PARAMS = {}                         # EDIT query params
+    HEADERS = {}                        # EDIT e.g. {"Authorization": f"Bearer {AUTH_TOKEN}"}
+    COOKIES = {}                        # EDIT e.g. {"token": get_loot("admin_token")}
+    SESSION_COOKIES = True              # EDIT False = only COOKIES above
+    EXPECT_STATUS = (200,)              # EDIT statuses that can contain the value
+    RETRY_STATUS = (200, 202, 204, 404) # EDIT statuses worth retrying
+    FOLLOW_REDIRECTS = True             # EDIT
+
+    MAX_ATTEMPTS = 30                   # EDIT None = retry forever
+    SLEEP_SECONDS = 2                   # EDIT delay between attempts
+    PRINT_EVERY = 1                     # EDIT print every N attempts; 1 = every attempt
+
+    # Same extraction knobs as Explicit GET extract.
+    ROW_SPLIT = "\n"                    # EDIT "\n" | "},{" | "<tr" | None
+    ROW_ALL = []                        # EDIT keep rows containing all markers
+    ROW_ANY = []                        # EDIT keep rows with at least one marker; [] disables
+    ROW_NONE = []                       # EDIT reject rows with any marker; [] disables
+
+    VALUE_MODE = "between"              # EDIT: between | regex | json | whole
+    VALUE_LEFT = "token="               # EDIT for between
+    VALUE_RIGHT = ";"                   # EDIT for between
+    VALUE_REGEX = r'token=([^;"]+)'     # EDIT for regex
+    JSON_PATH = ("access_token",)       # EDIT for json
+
+    SELECT_HIT = "last"                 # EDIT: first | last | all
+    DEDUPE = False                      # EDIT False keeps response order
+    FIELD_REGEX = ""                    # EDIT key=value parser, usually ""
+    DEBUG_EXTRACT = False               # EDIT True prints body/rows
+
+    attempt = 0
+    last_status = None
+    while MAX_ATTEMPTS is None or attempt < MAX_ATTEMPTS:
+        attempt += 1
+        r = send_request(
+            "GET", PATH,
+            params=PARAMS,
+            headers=HEADERS,
+            cookies=COOKIES,
+            session_cookies=SESSION_COOKIES,
+            allow_redirects=FOLLOW_REDIRECTS,
+        )
+        last_status = r.status_code
+        body = r.text
+        dprint("poll GET", attempt, r.url, r.status_code, "len=", len(body))
+
+        if r.status_code not in EXPECT_STATUS:
+            check(r.status_code in RETRY_STATUS, f"GET bad status {r.status_code}")
+            if attempt % PRINT_EVERY == 0:
+                print(f"[wait] {SAVE_NAME}: status {r.status_code}, attempt {attempt}")
+            time.sleep(SLEEP_SECONDS)
+            continue
+
+        if DEBUG_EXTRACT:
+            print("[body-preview]", body[:1000])
+
+        hits = []
+        if VALUE_MODE == "json":
+            try:
+                value = json_get(r.json(), JSON_PATH)
+            except ValueError:
+                value = None
+            if value:
+                hits.append(value)
+        else:
+            rows = [body] if ROW_SPLIT is None else body.split(ROW_SPLIT)
+            rows = filter_hits(rows, contains_all=ROW_ALL, contains_any=ROW_ANY, contains_none=ROW_NONE)
+            for i, row in enumerate(rows, 1):
+                if VALUE_MODE == "between":
+                    value = between(row, VALUE_LEFT, VALUE_RIGHT, soft=True)
+                elif VALUE_MODE == "regex":
+                    found = regex_hits(row, VALUE_REGEX)
+                    if DEBUG_EXTRACT:
+                        print(f"[regex {i}]", found)
+                    hits.extend(found)
+                    continue
+                elif VALUE_MODE == "whole":
+                    value = row
+                else:
+                    die("bad VALUE_MODE")
+
+                if DEBUG_EXTRACT:
+                    print(f"[row {i}]", row[:300])
+                    print(f"[value {i}]", value)
+                if value:
+                    hits.append(value)
+
+            if not hits and VALUE_REGEX:
+                hits = regex_hits(body, VALUE_REGEX)
+
+        if hits:
+            return save_hit(SAVE_NAME, hits, select=SELECT_HIT, dedupe=DEDUPE, fields_regex=FIELD_REGEX, resp=r)
+
+        if attempt % PRINT_EVERY == 0:
+            print(f"[wait] {SAVE_NAME}: no hit, attempt {attempt}")
+        time.sleep(SLEEP_SECONDS)
+
+    die(f"{SAVE_NAME} not found after {MAX_ATTEMPTS} attempts, last status {last_status}")
+`
+  },
+  {
     id:"http-extract-helper-kit",
     title:"ADD - Small extract helper kit",
     category:"Helpers",
