@@ -386,55 +386,55 @@ def callback_url(path="", scheme="http"):
     chainRole:"extract",
     defaultFunction:"conditional_get_extract",
     aliases:["get","conditional get","extract","regex","admin twice","contains","marker","filter","response parser","html json text"],
-    useWhen:"GET response contains many values and you only want candidates when markers/counts match, e.g. admin appears twice or admin plus another string exists.",
-    editFirst:["PATH","PARAMS","EXTRACT_REGEX","CONTAINS_ALL","MIN_COUNTS","HIT_CONTAINS_ALL","USE_LAST_HIT","LAST_HIT_FROM_RAW","DEBUG_CAPTURE"],
+    useWhen:"GET response contains many repeated values and you need a simple body-check, regex extract, hit filter, and first/last/all selector.",
+    editFirst:["PATH","ITEM_REGEX","HIT_ALL","SELECT_HIT","DEDUPE","FIELD_REGEX","DEBUG"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def conditional_get_extract():
-    # Use when: one GET returns a big HTML/JSON/text blob and you need:
-    # 1) confirm the blob is the right one, then 2) extract only useful values.
-    # Fill order:
-    # - PATH/PARAMS: request to fetch the blob.
-    # - CONTAINS_*/MIN_COUNTS: conditions checked against the full response body.
-    # - EXTRACT_REGEX: capture candidates from the body.
-    # - HIT_CONTAINS_*: filters applied to each captured candidate.
-    # - FIELD_REGEX: optional key=value parser for each final hit.
-    # Output globals for later steps:
-    # - LOOT_HITS: all final hits.
-    # - LOOT_HIT: selected hit, usable in cookies/headers/query/websocket.
-    # - LOOT_FIELDS: parsed key=value fields from LOOT_HIT, if FIELD_REGEX matches.
+    # Use when: GET returns HTML/JSON/text with many repeated values.
+    # Mental model:
+    #   1. GET PATH.
+    #   2. Optional BODY_* checks decide if the whole response is interesting.
+    #   3. ITEM_REGEX extracts candidate items in response order.
+    #   4. HIT_* filters each extracted item.
+    #   5. SELECT_HIT chooses "first", "last", or "all".
+    #
+    # Result globals for later steps:
+    #   LOOT_HITS   -> selected list
+    #   LOOT_HIT    -> first selected item, usually the value you reuse
+    #   LOOT_FIELDS -> key=value dict parsed from LOOT_HIT when FIELD_REGEX matches
     global LOOT_HITS, LOOT_HIT, LOOT_FIELDS
     LOOT_HITS, LOOT_HIT, LOOT_FIELDS = [], None, {}
 
-    PATH = "/api/items"                       # EDIT endpoint to fetch, e.g. /group/13/messages
-    PARAMS = {}                               # EDIT query params, e.g. {"page": "1"}
-    HEADERS = {}                              # EDIT extra headers only; Bearer from login is already in s.headers
-    COOKIES = {}                              # EDIT extra cookies only; session cookies already ride with s
-    EXPECT_STATUS = (200,)                    # EDIT allowed HTTP statuses
-    FOLLOW_REDIRECTS = True                   # EDIT False if redirect status/location matters
+    PATH = "/api/items"                       # EDIT e.g. /group/13/messages
+    PARAMS = {}                               # EDIT query params
+    HEADERS = {}                              # EDIT extra headers; Bearer from login is already in s.headers
+    COOKIES = {}                              # EDIT extra cookies
+    EXPECT_STATUS = (200,)                    # EDIT
+    FOLLOW_REDIRECTS = True                   # EDIT
 
-    # Full-body gates: fail early if the whole response is not the interesting page/data.
-    CONTAINS_ALL = []                         # EDIT all must exist, e.g. ["admin", "Public Discussion"]
-    CONTAINS_ANY = []                         # EDIT at least one must exist, e.g. ["role", "username"]
-    CONTAINS_NONE = []                        # EDIT none may exist, e.g. ["disabled", "forbidden"]
-    MIN_COUNTS = {"admin": 2}                 # EDIT body.count(marker) minimums; {} disables count checks
+    # Whole-response checks. Keep empty unless needed.
+    BODY_ALL = []                             # EDIT all required in body, e.g. ["admin", "Public Discussion"]
+    BODY_ANY = []                             # EDIT at least one required in body
+    BODY_NONE = []                            # EDIT fail if any appears
+    BODY_MIN_COUNTS = {}                      # EDIT e.g. {"admin": 2}
 
-    # Candidate extraction: capture the value/block you want from the body.
+    # Extract candidates. Prefer regex that captures exactly what you need.
     # Examples:
-    # - r'"username"\s*:\s*"([^"]+)"' captures usernames from JSON-ish text.
-    # - r'"message_text"\s*:\s*"([^"]+)"' captures full message text.
-    # - r'token=([^;"]+)' captures only a token inside a message/cookie string.
-    EXTRACT_REGEX = r'"username"\s*:\s*"([^"]+)"'  # EDIT one capture group is easiest
+    #   ITEM_REGEX = r'"message_text"\s*:\s*"([^"]+)"'      # full message text
+    #   ITEM_REGEX = r'token=([^;"]+);\s*username=admin'    # admin token only
+    #   ITEM_REGEX = r'"username"\s*:\s*"([^"]+)"'          # usernames
+    ITEM_REGEX = r'"username"\s*:\s*"([^"]+)"'  # EDIT one capture group is easiest
 
-    # Per-hit filters: after regex capture, keep only candidates with these markers.
-    HIT_CONTAINS_ALL = []                     # EDIT all must exist inside hit, e.g. ["token=", "username=admin"]
-    HIT_CONTAINS_ANY = []                     # EDIT at least one must exist inside hit
-    FIELD_REGEX = r'([A-Za-z_][A-Za-z0-9_]*)=([^;"]+)'  # EDIT parses "token=...; username=..."; "" disables
-    UNIQUE = True                             # EDIT remove duplicate hits while keeping order
-    USE_LAST_HIT = False                      # EDIT True keeps only the last hit after filters
-    LAST_HIT_FROM_RAW = True                  # EDIT True = last filtered hit in response order; False = last after UNIQUE
-    DEBUG_CAPTURE = True                      # EDIT prints body preview, raw captures, skips, parsed fields
-    PRINT_BODY_ON_FAIL = False                # EDIT True when gates fail and you need to see response
+    # Per-item filters. These run after ITEM_REGEX.
+    HIT_ALL = []                              # EDIT all required inside item
+    HIT_ANY = []                              # EDIT at least one required inside item
+    HIT_NONE = []                             # EDIT reject item if any appears
+
+    SELECT_HIT = "all"                        # EDIT: all | first | last
+    DEDUPE = False                            # EDIT False keeps exact response order, best for latest/last token
+    FIELD_REGEX = r'([A-Za-z_][A-Za-z0-9_]*)=([^;"]+)'  # EDIT parse key=value from selected LOOT_HIT; "" disables
+    DEBUG = True                              # EDIT print body preview, captures, skips, loot
 
     r = s.get(
         url(PATH),
@@ -446,94 +446,76 @@ def callback_url(path="", scheme="http"):
     )
     body = r.text
     dprint("conditional GET", r.url, r.status_code, "len=", len(body))
-    if DEBUG_CAPTURE:
+    if DEBUG:
         print("[body-preview]", body[:1000])
     check(r.status_code in EXPECT_STATUS, f"GET bad status {r.status_code}")
 
-    failures = []
-    for marker in CONTAINS_ALL:
-        if DEBUG_CAPTURE:
-            print(f"[check] contains_all {marker!r} -> {marker in body}")
+    for marker in BODY_ALL:
+        if DEBUG:
+            print(f"[body all] {marker!r} -> {marker in body}")
         if marker not in body:
-            failures.append(f"missing marker: {marker}")
-    if CONTAINS_ANY and not any(marker in body for marker in CONTAINS_ANY):
-        failures.append("none of CONTAINS_ANY found")
-    for marker in CONTAINS_NONE:
-        if DEBUG_CAPTURE:
-            print(f"[check] contains_none {marker!r} -> {marker not in body}")
+            die(f"body missing marker: {marker}")
+    if BODY_ANY and not any(marker in body for marker in BODY_ANY):
+        die("body has none of BODY_ANY")
+    for marker in BODY_NONE:
+        if DEBUG:
+            print(f"[body none] {marker!r} -> {marker not in body}")
         if marker in body:
-            failures.append(f"blocked marker present: {marker}")
-    for marker, needed in MIN_COUNTS.items():
+            die(f"body blocked marker present: {marker}")
+    for marker, needed in BODY_MIN_COUNTS.items():
         seen = body.count(marker)
-        if DEBUG_CAPTURE:
-            print(f"[check] count {marker!r}: {seen} needed {needed}")
+        if DEBUG:
+            print(f"[body count] {marker!r}: {seen} needed {needed}")
         if seen < needed:
-            failures.append(f"{marker!r} count {seen} < {needed}")
+            die(f"body count {marker!r} {seen} < {needed}")
 
-    if failures:
-        if PRINT_BODY_ON_FAIL:
-            print(body[:1500])
-        die("; ".join(failures))
+    raw_items = re.findall(ITEM_REGEX, body, flags=re.I | re.S) if ITEM_REGEX else [body]
+    if DEBUG:
+        print(f"[extract] {len(raw_items)} raw items with ITEM_REGEX={ITEM_REGEX!r}")
 
-    # If EXTRACT_REGEX is empty, the whole body becomes one hit.
-    # If regex has multiple capture groups, they are joined into one printable hit.
     hits = []
-    if EXTRACT_REGEX:
-        raw_hits = re.findall(EXTRACT_REGEX, body, flags=re.I | re.S)
-        if DEBUG_CAPTURE:
-            print(f"[debug] regex captures: {len(raw_hits)} using {EXTRACT_REGEX!r}")
-        for i, hit in enumerate(raw_hits, 1):
-            if isinstance(hit, tuple):
-                hit = " ".join(str(x) for x in hit if x is not None)
-            hit = str(hit).strip()
-            if DEBUG_CAPTURE:
-                print(f"[raw-hit {i}]", hit[:500])
-            if HIT_CONTAINS_ALL and not all(x in hit for x in HIT_CONTAINS_ALL):
-                if DEBUG_CAPTURE:
-                    print(f"[skip {i}] missing HIT_CONTAINS_ALL")
-                continue
-            if HIT_CONTAINS_ANY and not any(x in hit for x in HIT_CONTAINS_ANY):
-                if DEBUG_CAPTURE:
-                    print(f"[skip {i}] none of HIT_CONTAINS_ANY found")
-                continue
-            hits.append(hit)
-    else:
-        hits = [body]
+    for i, item in enumerate(raw_items, 1):
+        if isinstance(item, tuple):
+            item = " ".join(str(x) for x in item if x is not None)
+        item = str(item).strip()
+        if DEBUG:
+            print(f"[raw {i}]", item[:500])
+        if HIT_ALL and not all(x in item for x in HIT_ALL):
+            if DEBUG:
+                print(f"[skip {i}] missing HIT_ALL")
+            continue
+        if HIT_ANY and not any(x in item for x in HIT_ANY):
+            if DEBUG:
+                print(f"[skip {i}] none of HIT_ANY")
+            continue
+        if HIT_NONE and any(x in item for x in HIT_NONE):
+            if DEBUG:
+                print(f"[skip {i}] matched HIT_NONE")
+            continue
+        hits.append(item)
 
-    filtered_hits = list(hits)                # preserved response order after HIT_CONTAINS_* filters
-
-    if USE_LAST_HIT and LAST_HIT_FROM_RAW and filtered_hits:
-        if DEBUG_CAPTURE:
-            print(f"[debug] USE_LAST_HIT=True, LAST_HIT_FROM_RAW=True, keeping raw filtered hit {len(filtered_hits)}")
-        hits = [filtered_hits[-1]]
-    elif UNIQUE:
+    if DEDUPE:
         hits = list(dict.fromkeys(hits))
+        if DEBUG:
+            print("[dedupe] hits:", len(hits))
 
-    if USE_LAST_HIT and (not LAST_HIT_FROM_RAW) and hits:
-        if DEBUG_CAPTURE:
-            print(f"[debug] USE_LAST_HIT=True, LAST_HIT_FROM_RAW=False, keeping unique hit {len(hits)}")
+    check(SELECT_HIT in ("all", "first", "last"), "SELECT_HIT must be all, first, or last")
+    if SELECT_HIT == "first" and hits:
+        hits = [hits[0]]
+    elif SELECT_HIT == "last" and hits:
         hits = [hits[-1]]
 
     LOOT_HITS = hits
     LOOT_HIT = hits[0] if hits else None
-    if FIELD_REGEX and LOOT_HIT:
-        LOOT_FIELDS = dict(re.findall(FIELD_REGEX, LOOT_HIT))
-    else:
-        LOOT_FIELDS = {}
+    LOOT_FIELDS = dict(re.findall(FIELD_REGEX, LOOT_HIT)) if FIELD_REGEX and LOOT_HIT else {}
 
-    print("[+] conditional GET matched")
-    for hit in hits:
-        print("[hit]", hit)
-        if FIELD_REGEX:
-            # Helpful for strings like:
-            # token=JWT; username=admin; group=13; group_name=Public Discussion
-            fields = dict(re.findall(FIELD_REGEX, hit))
-            if fields:
-                print("[fields]", fields)
-    if DEBUG_CAPTURE:
+    print("[+] conditional GET matched:", len(LOOT_HITS), "hit(s)")
+    for i, hit in enumerate(LOOT_HITS, 1):
+        print(f"[hit {i}]", hit)
+    if DEBUG:
         print("[loot] LOOT_HIT =", LOOT_HIT)
         print("[loot] LOOT_FIELDS =", LOOT_FIELDS)
-    return hits
+    return LOOT_HITS
 `
   },
   {
