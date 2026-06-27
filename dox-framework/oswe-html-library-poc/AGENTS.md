@@ -40,5 +40,4 @@ python -m http.server 8765 --bind 127.0.0.1 --directory site
 # Child DOX Index
 
 - `.github/workflows/` - GitHub Pages deploy workflow.
-- `dox-framework/` - mirrored OSWE DOX `AGENTS.md` hierarchy for portable agent instructions.
 - `site/` - published static app.
