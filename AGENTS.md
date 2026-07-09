@@ -13,7 +13,7 @@
 - Repository: `https://github.com/SenSecurity/oswe-html-library-poc`.
 - This repo is public; keep all content sanitized.
 - Do not push unless Bruno explicitly asks.
-- Publish by copying the built v5 `site/index.html` into `site/index.html`.
+- Current published surface is the user-approved v5 vision generated at `../tmp/v5-design-vision/index.html` from canonical v5 entries; copy that artifact into `site/index.html` until the vision is promoted into the canonical generator.
 - Preserve `.github/workflows/deploy-pages.yml` and `.nojekyll`.
 
 # Work Guidance
