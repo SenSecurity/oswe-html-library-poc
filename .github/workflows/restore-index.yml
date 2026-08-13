@@ -1,0 +1,59 @@
+name: Restore index.html
+
+on:
+  push:
+    paths:
+      - '.github/workflows/restore-index.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  restore-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore full site/index.html
+        run: |
+          set -euo pipefail
+          git checkout 3b2a8386af35fb661335f43257dd41682be81f52 -- site/index.html
+          SIZE=$(wc -c < site/index.html)
+          echo "Restored size: $SIZE"
+          test "$SIZE" -gt 300000
+          head -c 80 site/index.html
+          echo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/index.html
+          if git diff --cached --quiet; then
+            echo "Already restored"
+          else
+            git commit -m "restore: full original site/index.html from 3b2a838"
+            git push
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
